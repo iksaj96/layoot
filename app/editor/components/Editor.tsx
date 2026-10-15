@@ -40,6 +40,14 @@ const ELEMEN_KOSONG: DesignElement[] = [];
 const subscribeToClient = () => () => {};
 const getClientSnapshot = () => true;
 const getServerSnapshot = () => false;
+const jedaSimpan = 650;
+
+function serialisasiDesain(
+  desain: Pick<EditorDesign, "pages" | "title" | "paper" | "orientation">
+) {
+  return JSON.stringify(desain);
+}
+
 const subscribeToFonts = (notify: () => void) => {
   if (typeof document === "undefined") return () => {};
   document.fonts.addEventListener("loadingdone", notify);
@@ -203,37 +211,211 @@ export default function Editor({ design }: { design: EditorDesign }) {
     terbaru.current = { pages, title, paper, orientation };
   });
 
-  const simpanId = useRef(0);
-  const pertama = useRef(true);
+  const [snapshotTersimpanUI, setSnapshotTersimpanUI] = useState(() =>
+    serialisasiDesain({ pages, title, paper, orientation })
+  );
+  const snapshotTersimpan = useRef(snapshotTersimpanUI);
+  const versiTersimpan = useRef(design.updated_at);
+  const snapshotDalamSimpan = useRef<string | null>(null);
+  const timerSimpan = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const revisiDiminta = useRef(0);
+  const revisiTersimpan = useRef(0);
+  const prosesSimpan = useRef<Promise<boolean> | null>(null);
+  const snapshotLokal = useMemo(
+    () => serialisasiDesain({ pages, title, paper, orientation }),
+    [pages, title, paper, orientation]
+  );
+  const statusTampilan =
+    status === "gagal" || status === "konflik"
+      ? status
+      : status === "menyimpan"
+        ? status
+        : snapshotLokal === snapshotTersimpanUI
+          ? "tersimpan"
+          : "belum";
 
   const kirim = useCallback(async () => {
-    const { pages: p, title: t, paper: k, orientation: o } = terbaru.current;
-    const id = ++simpanId.current;
-    setStatus("menyimpan");
-    const { error } = await createClient()
-      .from("designs")
-      .update({ title: t, pages: p, paper: k, orientation: o })
-      .eq("id", design.id);
-    if (simpanId.current === id) setStatus(error ? "gagal" : "tersimpan");
+    if (timerSimpan.current) {
+      clearTimeout(timerSimpan.current);
+      timerSimpan.current = null;
+    }
+    revisiDiminta.current += 1;
+    if (prosesSimpan.current) return prosesSimpan.current;
+
+    const proses = (async () => {
+      while (revisiTersimpan.current < revisiDiminta.current) {
+        const revisi = revisiDiminta.current;
+        const data = terbaru.current;
+        const snapshot = serialisasiDesain(data);
+        if (snapshot === snapshotTersimpan.current) {
+          revisiTersimpan.current = revisi;
+          continue;
+        }
+
+        setStatus("menyimpan");
+        const versiTanggal = Date.parse(versiTersimpan.current);
+        const waktuUpdate = new Date(
+          Math.max(Date.now(), Number.isFinite(versiTanggal) ? versiTanggal + 1 : 0)
+        ).toISOString();
+        snapshotDalamSimpan.current = snapshot;
+
+        let tersimpan = false;
+        let konflik = false;
+        for (let percobaan = 0; percobaan < 2; percobaan += 1) {
+          try {
+            const { data: hasil, error } = await createClient()
+              .from("designs")
+              .update({ ...data, updated_at: waktuUpdate })
+              .eq("id", design.id)
+              .eq("updated_at", versiTersimpan.current)
+              .select("updated_at")
+              .maybeSingle();
+
+            if (hasil) {
+              versiTersimpan.current = hasil.updated_at;
+              snapshotTersimpan.current = snapshot;
+              setSnapshotTersimpanUI(snapshot);
+              revisiTersimpan.current = revisi;
+              tersimpan = true;
+              break;
+            }
+            if (!error) {
+              konflik = true;
+              break;
+            }
+            if (percobaan === 0) {
+              await new Promise((resolve) => setTimeout(resolve, 350));
+            }
+          } catch {
+            if (percobaan === 1) break;
+            await new Promise((resolve) => setTimeout(resolve, 350));
+          }
+        }
+
+        snapshotDalamSimpan.current = null;
+        if (!tersimpan) {
+          setStatus(konflik ? "konflik" : "gagal");
+          setPesan(
+            konflik
+              ? "Desain berubah di tab lain. Muat ulang untuk mengambil versi terbaru."
+              : "Gagal menyimpan ke Supabase. Tekan Ctrl+S untuk mencoba lagi."
+          );
+          return false;
+        }
+      }
+
+      setStatus("tersimpan");
+      setPesan("");
+      return true;
+    })();
+    prosesSimpan.current = proses;
+    try {
+      return await proses;
+    } finally {
+      if (prosesSimpan.current === proses) prosesSimpan.current = null;
+    }
   }, [design.id]);
 
   useEffect(() => {
-    if (pertama.current) {
-      pertama.current = false;
-      return;
-    }
-    setStatus("belum");
-    simpanId.current += 1; // hasil simpan lama yang masih berjalan diabaikan
-    const t = setTimeout(kirim, 1200);
-    return () => clearTimeout(t);
-  }, [pages, title, paper, orientation, kirim]);
+    if (snapshotLokal === snapshotTersimpan.current) return;
+    timerSimpan.current = setTimeout(() => {
+      timerSimpan.current = null;
+      void kirim();
+    }, jedaSimpan);
+    return () => {
+      if (timerSimpan.current) clearTimeout(timerSimpan.current);
+      timerSimpan.current = null;
+    };
+  }, [snapshotLokal, kirim]);
 
   useEffect(() => {
-    if (status === "tersimpan") return;
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`desain:${design.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "designs",
+          filter: `id=eq.${design.id}`,
+        },
+        ({ new: perubahan }) => {
+          const baris = perubahan as Partial<EditorDesign>;
+          if (
+            baris.id !== design.id ||
+            typeof baris.title !== "string" ||
+            (baris.paper !== "A4" && baris.paper !== "F4") ||
+            (baris.orientation !== "portrait" && baris.orientation !== "landscape") ||
+            !Array.isArray(baris.pages) ||
+            typeof baris.updated_at !== "string"
+          ) {
+            return;
+          }
+          if (
+            Date.parse(baris.updated_at) <=
+            Date.parse(versiTersimpan.current)
+          ) {
+            return;
+          }
+
+          const remote = {
+            pages: baris.pages,
+            title: baris.title,
+            paper: baris.paper,
+            orientation: baris.orientation,
+          } as typeof terbaru.current;
+          const snapshotRemote = serialisasiDesain(remote);
+          if (
+            snapshotRemote === snapshotDalamSimpan.current ||
+            snapshotRemote === snapshotTersimpan.current
+          ) {
+            snapshotTersimpan.current = snapshotRemote;
+            setSnapshotTersimpanUI(snapshotRemote);
+            versiTersimpan.current = baris.updated_at;
+            return;
+          }
+
+          const localKotor =
+            serialisasiDesain(terbaru.current) !== snapshotTersimpan.current ||
+            timerSimpan.current !== null ||
+            prosesSimpan.current !== null;
+          if (localKotor) {
+            setStatus("konflik");
+            setPesan(
+              "Desain berubah di tab lain. Perubahan lokal dipertahankan; muat ulang untuk mengambil versi terbaru."
+            );
+            return;
+          }
+
+          const halamanRemote =
+            remote.pages.length > 0 ? remote.pages : [{ id: "p1", elements: [] }];
+          const dataTerbaru = { ...remote, pages: halamanRemote };
+          terbaru.current = dataTerbaru;
+          snapshotTersimpan.current = serialisasiDesain(dataTerbaru);
+          setSnapshotTersimpanUI(snapshotTersimpan.current);
+          versiTersimpan.current = baris.updated_at;
+          setTitle(dataTerbaru.title);
+          setPaper(dataTerbaru.paper);
+          setOrientation(dataTerbaru.orientation);
+          setPages(() => dataTerbaru.pages);
+          setStatus("tersimpan");
+          setPesan("");
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [design.id, setPages]);
+
+  useEffect(() => {
+    if (statusTampilan === "tersimpan") return;
     const h = (e: BeforeUnloadEvent) => e.preventDefault();
     window.addEventListener("beforeunload", h);
     return () => window.removeEventListener("beforeunload", h);
-  }, [status]);
+  }, [statusTampilan]);
 
   /* ---------- Operasi objek ---------- */
 
@@ -564,6 +746,29 @@ export default function Editor({ design }: { design: EditorDesign }) {
     else if (clickCount >= 3) setMode(element?.type === "rect" ? "sudut" : "ukuran");
   }
 
+  async function bukaPreview() {
+    const tab = window.open("about:blank", "_blank");
+    if (!tab) {
+      setPesan("Izinkan pop-up untuk membuka preview di tab baru.");
+      return;
+    }
+
+    tab.opener = null;
+    setPesan("");
+    try {
+      const tersimpan = await kirim();
+      if (!tersimpan) {
+        tab.close();
+        setPesan("Desain belum berhasil disimpan. Coba lagi.");
+        return;
+      }
+      tab.location.href = `/editor/${design.id}/preview`;
+    } catch {
+      tab.close();
+      setPesan("Desain belum berhasil disimpan. Coba lagi.");
+    }
+  }
+
   /* ---------- Operasi halaman ---------- */
 
   function pilihHalaman(i: number) {
@@ -736,25 +941,31 @@ export default function Editor({ design }: { design: EditorDesign }) {
           />
           <span
             role="status"
-            title={LABEL_STATUS[status]}
-            aria-label={LABEL_STATUS[status]}
+            title={LABEL_STATUS[statusTampilan]}
+            aria-label={LABEL_STATUS[statusTampilan]}
             className={`flex h-8 shrink-0 items-center gap-1 px-1 ${
-              status === "gagal" ? "text-red-700" : status === "tersimpan" ? "text-emerald-600" : "text-stone-500"
+              statusTampilan === "gagal"
+                ? "text-red-700"
+                : statusTampilan === "konflik"
+                  ? "text-amber-700"
+                  : statusTampilan === "tersimpan"
+                    ? "text-emerald-600"
+                    : "text-stone-500"
             }`}
           >
             <Icon
               name={
-                status === "tersimpan"
+                statusTampilan === "tersimpan"
                   ? "circleCheck"
-                  : status === "gagal"
+                  : statusTampilan === "gagal" || statusTampilan === "konflik"
                     ? "help"
                     : "loader"
               }
               size={18}
-              className={status === "menyimpan" || status === "belum" ? "animate-spin" : undefined}
+              className={statusTampilan === "menyimpan" || statusTampilan === "belum" ? "animate-spin" : undefined}
             />
             <span className="hidden whitespace-nowrap text-xs font-semibold lg:inline">
-              {LABEL_STATUS[status]}
+              {LABEL_STATUS[statusTampilan]}
             </span>
           </span>
         </div>
@@ -811,23 +1022,52 @@ export default function Editor({ design }: { design: EditorDesign }) {
         />
       </div>
 
-      <PageStrip
-        total={pages.length}
-        active={hal}
-        onSelect={pilihHalaman}
-        onAdd={tambahHalaman}
-        onDuplicate={duplikatHalaman}
-        onDelete={hapusHalaman}
-      />
-      <StatusBar
-        tool={tool}
-        mode={mode}
-        selected={selected}
-        pesan={pesan}
-        zoom={Math.round((scale / PX_PER_MM) * 100)}
-        onZoom={zoom}
-        onFit={() => setScale(fitScale())}
-      />
+      <footer className="shrink-0">
+        <div className="flex items-center border-t border-stone-300 bg-stone-100">
+          <div className="min-w-0 flex-1">
+            <PageStrip
+              total={pages.length}
+              active={hal}
+              onSelect={pilihHalaman}
+              onAdd={tambahHalaman}
+              onDuplicate={duplikatHalaman}
+              onDelete={hapusHalaman}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={bukaPreview}
+            title="Lihat preview selebaran di tab baru"
+            className="mx-2 flex h-7 shrink-0 items-center gap-1.5 rounded-lg bg-indigo-600 px-2 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700 sm:gap-1.5 sm:px-2.5 sm:text-xs"
+          >
+            <svg
+              width="17"
+              height="17"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.7"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+              className="shrink-0"
+            >
+              <path d="M12 7v14m0-14C10.5 5.7 8.6 5 6 5S2.5 5.7 1 7v13c1.5-1.3 3.5-2 6-2s4.5.7 5 2" />
+              <path d="M12 7c1.5-1.3 3.4-2 6-2s3.5.7 5 2v13c-1.5-1.3-3.5-2-6-2s-4.5.7-5 2" />
+            </svg>
+            <span className="whitespace-nowrap">Lihat preview selebaran</span>
+          </button>
+        </div>
+        <StatusBar
+          tool={tool}
+          mode={mode}
+          selected={selected}
+          pesan={pesan}
+          zoom={Math.round((scale / PX_PER_MM) * 100)}
+          onZoom={zoom}
+          onFit={() => setScale(fitScale())}
+        />
+      </footer>
 
       {helpOpen && <ShortcutHelp onClose={() => setHelpOpen(false)} />}
     </div>

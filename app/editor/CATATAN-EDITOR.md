@@ -84,6 +84,7 @@ lib/types.ts                   Tipe data: Paper, DesignElement, DesignPage, Desi
 | Dropdown font | `toolbar/FontSelect.tsx` (daftar font di `core/fonts.ts`) |
 | Jendela daftar pintasan | `panels/ShortcutHelp.tsx` |
 | Hasil PDF / cetak | `export/ExportPdf.tsx` |
+| Preview selebaran seperti buku | `preview/BookPreview.tsx` + `[id]/preview/page.tsx`; pemicu tombol di `Editor.tsx` |
 | Bentuk ikon | `ui/Icon.tsx` |
 
 ## Cari file dari JENIS PERUBAHAN
@@ -128,7 +129,7 @@ Field baru harus opsional agar desain lama tetap aman. `pages` disimpan sebagai 
 ## Alur penting
 - **State utama** ada di `Editor.tsx`. Komponen lain hanya menerima props dan callback.
 - **Undo/redo**: `setPages(fn, kunci?)` dari `useHistory`. Kunci sama dalam 0,7 detik jadi satu langkah.
-- **Simpan otomatis**: tertunda 1,2 detik setelah `pages`, `title`, `paper`, atau `orientation` berubah. `Ctrl+S` simpan langsung.
+- **Simpan otomatis**: debounce 650 ms setelah `pages`, `title`, `paper`, atau `orientation` berubah; perubahan yang berdekatan digabung ke satu update. Update memakai `updated_at` sebagai optimistic lock dan realtime menyinkronkan tab yang bersih. `Ctrl+S` simpan langsung.
 - **Mode transformasi**: klik objek dua kali untuk mode putar/balik; klik tiga kali pada persegi untuk mode sudut.
 - **Pustaka gambar**: tombol gambar membuka koleksi pada bucket `design-assets`; unggahan lebih dari 2 MB atau 2000 px per sisi menawarkan kompresi hingga batas 15 MB/2000 px, atau dapat dibatalkan. File sumber di atas 50 MB ditolak. Unggahan dari pustaka atau drag-and-drop tersimpan di Storage, dan hapus aset juga melepaskan referensinya dari desain ini.
 - **Data Supabase**: jalankan `supabase/migrations/20261015000000_profiles_and_images.sql` untuk membuat/sinkronisasi `profiles` dan `images`, termasuk backfill gambar lama dari bucket.
@@ -157,3 +158,4 @@ Catatan: Ctrl+PageUp/PageDown dipakai Chrome untuk pindah tab, jadi tidak bisa d
 - 2026-10-15: Kotak teks mendukung rata kiri-kanan, kolom, dan alur teks ke kotak berikutnya; layar dan PDF memakai pembagian teks yang sama.
 - 2026-10-15: Properti objek dipindah ke sidebar bertab Properti/Katalog/Objek, alat Crop mendukung objek dan gambar, serta shortcut ditampilkan pada tombol yang memilikinya.
 - 2026-10-15: Header editor diringkas menjadi satu baris; pengaturan ukuran/orientasi dokumen dipindah ke header, sedangkan kontrol perataan berada di kartu panel kanan.
+- 2026-10-15: Tombol preview membuka desain tersimpan di tab baru dengan tampilan buku responsif dan navigasi halaman.

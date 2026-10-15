@@ -19,7 +19,7 @@ async function EditorIsi({ params }: Props) {
 
   const { data } = await supabase
     .from("designs")
-    .select("id, title, paper, orientation, pages")
+    .select("id, title, paper, orientation, pages, updated_at")
     .eq("id", id)
     .maybeSingle();
 

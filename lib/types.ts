@@ -61,5 +61,5 @@ export type Design = {
 
 export type EditorDesign = Pick<
   Design,
-  "id" | "title" | "paper" | "orientation" | "pages"
+  "id" | "title" | "paper" | "orientation" | "pages" | "updated_at"
 >;

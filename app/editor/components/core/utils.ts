@@ -9,13 +9,14 @@ export type Tool = "pilih" | "teks" | "persegi" | "elips" | "garis" | "crop";
 export type AlignAction = "C" | "E" | "L" | "R" | "T" | "B" | "P";
 export type Handle = "nw" | "n" | "ne" | "w" | "e" | "sw" | "s" | "se";
 export type Mode = "ukuran" | "putar" | "sudut";
-export type Status = "tersimpan" | "menyimpan" | "belum" | "gagal";
+export type Status = "tersimpan" | "menyimpan" | "belum" | "gagal" | "konflik";
 
 export const LABEL_STATUS: Record<Status, string> = {
   tersimpan: "Tersimpan",
   menyimpan: "Menyimpan...",
   belum: "Belum tersimpan",
   gagal: "Gagal menyimpan",
+  konflik: "Konflik perubahan",
 };
 
 export const uid = () => Math.random().toString(36).slice(2, 10);

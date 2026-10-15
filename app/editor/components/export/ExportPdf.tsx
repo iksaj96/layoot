@@ -16,7 +16,7 @@ type Props = {
   size: { w: number; h: number };
 };
 
-function CetakElemen({
+export function CetakElemen({
   el,
   textFlow,
 }: {
