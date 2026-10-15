@@ -69,6 +69,10 @@ const PATHS = {
     "M3 16h3a2 2 0 0 1 2 2v3",
     "M16 21v-3a2 2 0 0 1 2-2h3",
   ],
+  crop: ["M6 3v12a3 3 0 0 0 3 3h12", "M18 21V9a3 3 0 0 0-3-3H3"],
+  rotate: ["M20 7v5h-5", "M4.93 19a9 9 0 1 0-1.87-9"],
+  flipHorizontal: ["M12 3v18", "m8 7-4 5 4 5", "m16 7 4 5-4 5"],
+  flipVertical: ["M3 12h18", "m7 8 5-4 5 4", "m7 16 5 4 5-4"],
 } as const;
 
 export type IconName = keyof typeof PATHS;
@@ -102,6 +106,7 @@ export default function Icon({
 type IconButtonProps = {
   icon: IconName;
   label: string;
+  shortcut?: string;
   onClick: () => void;
   active?: boolean;
   disabled?: boolean;
@@ -112,6 +117,7 @@ type IconButtonProps = {
 export function IconButton({
   icon,
   label,
+  shortcut,
   onClick,
   active,
   disabled,
@@ -124,19 +130,32 @@ export function IconButton({
     ? "text-red-700 hover:bg-red-50"
     : "text-stone-700 hover:bg-stone-200";
 
+  const tooltip = shortcut ? `${label} (${shortcut})` : label;
+
   return (
     <button
       type="button"
-      title={label}
-      aria-label={label}
+      title={tooltip}
+      aria-label={tooltip}
       aria-pressed={active}
       onClick={onClick}
       disabled={disabled}
-      className={`flex shrink-0 items-center justify-center rounded disabled:opacity-40 ${
-        small ? "h-6 w-6" : "h-8 w-8"
+      className={`relative flex shrink-0 items-center justify-center rounded disabled:opacity-40 ${
+        shortcut
+          ? small
+            ? "h-8 min-w-8 flex-col gap-0"
+            : "h-10 min-w-9 flex-col gap-0 px-0.5"
+          : small
+            ? "h-6 w-6"
+            : "h-8 w-8"
       } ${warna}`}
     >
-      <Icon name={icon} size={small ? 14 : 18} />
+      <Icon name={icon} size={shortcut ? (small ? 12 : 15) : small ? 14 : 18} />
+      {shortcut && (
+        <kbd className="whitespace-nowrap text-[7px] font-medium leading-none">
+          {shortcut}
+        </kbd>
+      )}
     </button>
   );
 }

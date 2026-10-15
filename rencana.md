@@ -1,0 +1,1 @@
+saya ingin ukuran defult teks itu 12. dan saya ingin ukuran kertas itu bisa di ubah langsung di editor (a4/f4, dropdown. bisa ubah rotasi juga (lanskap, potret).).

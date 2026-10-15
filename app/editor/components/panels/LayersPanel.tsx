@@ -26,7 +26,7 @@ const NAMA: Record<DesignElement["type"], string> = {
 
 export default function LayersPanel({ elements, selectedId, onSelect }: Props) {
   return (
-    <aside className="hidden w-48 shrink-0 flex-col border-l border-stone-300 bg-stone-100 md:flex">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex items-center gap-2 border-b border-stone-300 px-3 py-2 text-xs font-bold text-stone-700">
         <Icon name="layers" size={14} />
         Objek
@@ -57,6 +57,6 @@ export default function LayersPanel({ elements, selectedId, onSelect }: Props) {
           ))}
         </ul>
       )}
-    </aside>
+    </div>
   );
 }

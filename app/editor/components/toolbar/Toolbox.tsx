@@ -1,32 +1,38 @@
-import Icon, { IconButton } from "../ui/Icon";
+import { IconButton } from "../ui/Icon";
 import type { IconName } from "../ui/Icon";
-import ImageUpload from "./ImageUpload";
-import type { UploadedImage } from "./ImageUpload";
 import type { Tool } from "../core/utils";
+import type { SidebarTab } from "./EditorSidebar";
 
 type Props = {
   tool: Tool;
   onTool: (t: Tool) => void;
-  onImage: (img: UploadedImage) => void;
-  onError: (pesan: string) => void;
+  activeTab: SidebarTab;
+  onTab: (tab: SidebarTab) => void;
 };
 
-const ALAT: { id: Tool; icon: IconName; label: string }[] = [
-  { id: "pilih", icon: "pointer", label: "Pilih (V)" },
-  { id: "teks", icon: "text", label: "Teks (T)" },
-  { id: "persegi", icon: "rect", label: "Persegi (R)" },
-  { id: "elips", icon: "ellipse", label: "Elips (E)" },
-  { id: "garis", icon: "line", label: "Garis (L)" },
+const ALAT: { id: Tool; icon: IconName; label: string; shortcut: string }[] = [
+  { id: "pilih", icon: "pointer", label: "Pilih", shortcut: "V" },
+  { id: "teks", icon: "text", label: "Teks", shortcut: "Shift+T" },
+  { id: "persegi", icon: "rect", label: "Persegi", shortcut: "Shift+R" },
+  { id: "elips", icon: "ellipse", label: "Elips", shortcut: "Shift+E" },
+  { id: "garis", icon: "line", label: "Garis", shortcut: "Shift+L" },
+  { id: "crop", icon: "crop", label: "Crop", shortcut: "Shift+X" },
 ];
 
-export default function Toolbox({ tool, onTool, onImage, onError }: Props) {
+export default function Toolbox({
+  tool,
+  onTool,
+  activeTab,
+  onTab,
+}: Props) {
   return (
-    <aside className="flex w-11 shrink-0 flex-col items-center gap-1 border-r border-stone-300 bg-stone-100 py-2">
+    <aside className="flex w-12 shrink-0 flex-col items-center gap-1 border-r border-stone-300 bg-stone-100 py-2">
       {ALAT.map((a) => (
         <IconButton
           key={a.id}
           icon={a.icon}
-          label={a.label}
+          label={`Alat ${a.label}`}
+          shortcut={a.shortcut}
           active={tool === a.id}
           onClick={() => onTool(a.id)}
         />
@@ -34,14 +40,24 @@ export default function Toolbox({ tool, onTool, onImage, onError }: Props) {
 
       <span className="my-1 h-px w-6 bg-stone-300" />
 
-      <ImageUpload
-        onUploaded={onImage}
-        onError={onError}
-        title="Tambah gambar"
-        className="flex h-8 w-8 items-center justify-center rounded text-stone-700 hover:bg-stone-200 disabled:opacity-40"
-      >
-        <Icon name="image" />
-      </ImageUpload>
+      <IconButton
+        icon="image"
+        label="Buka katalog gambar"
+        active={activeTab === "catalog"}
+        onClick={() => onTab("catalog")}
+      />
+      <IconButton
+        icon="fill"
+        label="Buka properti objek"
+        active={activeTab === "properties"}
+        onClick={() => onTab("properties")}
+      />
+      <IconButton
+        icon="layers"
+        label="Buka daftar objek"
+        active={activeTab === "layers"}
+        onClick={() => onTab("layers")}
+      />
     </aside>
   );
 }

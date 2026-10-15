@@ -8,6 +8,7 @@ const NAMA_ALAT: Record<Tool, string> = {
   persegi: "Alat Persegi",
   elips: "Alat Elips",
   garis: "Alat Garis",
+  crop: "Alat Crop",
 };
 
 const NAMA_OBJEK: Record<DesignElement["type"], string> = {
@@ -37,11 +38,15 @@ export default function StatusBar({
   onZoom,
   onFit,
 }: Props) {
-  let info = "Tidak ada objek terpilih · Scroll = zoom · Klik roda tengah + geser = pindah tampilan";
-  if (selected) {
+  let info = tool === "crop"
+    ? "Crop: seret area pada objek untuk memangkasnya · Shift+X"
+    : "Tidak ada objek terpilih · Scroll = zoom · Klik roda tengah + geser = pindah tampilan";
+  if (selected && tool !== "crop") {
     info =
-      mode === "sudut" && selected.type === "rect"
-        ? `Mode sudut · ${selected.radius ?? 0} mm · seret titik oranye, klik objek lagi untuk kembali`
+      mode === "putar"
+        ? "Mode putar/balik · seret pegangan biru untuk memutar, gunakan tombol balik di bilah properti"
+        : mode === "sudut" && selected.type === "rect"
+        ? `Mode sudut · ${selected.radius ?? 0} mm · seret titik oranye`
         : `${NAMA_OBJEK[selected.type]} · ${selected.w} × ${selected.h} mm · di (${selected.x}; ${selected.y})`;
   }
   if (pesan) info = pesan;
@@ -53,7 +58,7 @@ export default function StatusBar({
       </span>
       <div className="flex shrink-0 items-center gap-1">
         <span className="hidden pr-2 sm:inline">{NAMA_ALAT[tool]}</span>
-        <IconButton small icon="minus" label="Perkecil (Ctrl+-)" onClick={() => onZoom(1 / 1.25)} />
+        <IconButton small icon="minus" label="Perkecil" shortcut="Ctrl+-" onClick={() => onZoom(1 / 1.25)} />
         <button
           type="button"
           title="Muat ke layar (Ctrl+0)"
@@ -62,7 +67,7 @@ export default function StatusBar({
         >
           {zoom}%
         </button>
-        <IconButton small icon="plus" label="Perbesar (Ctrl+=)" onClick={() => onZoom(1.25)} />
+        <IconButton small icon="plus" label="Perbesar" shortcut="Ctrl+=" onClick={() => onZoom(1.25)} />
       </div>
     </div>
   );

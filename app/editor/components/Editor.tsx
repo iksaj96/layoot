@@ -7,18 +7,19 @@ import { PAPER_SIZE_MM } from "@/lib/types";
 import type { DesignElement, DesignPage, EditorDesign } from "@/lib/types";
 import Canvas from "./canvas/Canvas";
 import ExportPdf from "./export/ExportPdf";
-import LayersPanel from "./panels/LayersPanel";
 import PageStrip from "./panels/PageStrip";
 import ShortcutHelp from "./panels/ShortcutHelp";
 import StatusBar from "./panels/StatusBar";
 import PropertyBar from "./toolbar/PropertyBar";
 import Toolbox from "./toolbar/Toolbox";
-import type { UploadedImage } from "./toolbar/ImageUpload";
+import EditorSidebar from "./toolbar/EditorSidebar";
+import type { SidebarTab } from "./toolbar/EditorSidebar";
+import { uploadImageFile } from "./toolbar/ImageUpload";
+import type { ImageAsset, UploadedImage } from "./toolbar/ImageUpload";
 import Icon, { IconButton } from "./ui/Icon";
 import { cloneElement, moveLayer, ubahElemen } from "./core/elementOps";
 import type { LayerOp } from "./core/elementOps";
 import { calculateTextFlow } from "./core/textFlow";
-import { shortcutTooltip } from "./core/shortcuts";
 import {
   LABEL_STATUS,
   MAX_SCALE,
@@ -75,6 +76,8 @@ export default function Editor({ design }: { design: EditorDesign }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [tool, setTool] = useState<Tool>("pilih");
   const [mode, setMode] = useState<Mode>("ukuran");
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>("properties");
+  const [imageLibraryRevision, setImageLibraryRevision] = useState(0);
   const [pesan, setPesan] = useState("");
   const [scale, setScale] = useState(1.2); // px per mm
   const [status, setStatus] = useState<Status>("tersimpan");
@@ -99,7 +102,15 @@ export default function Editor({ design }: { design: EditorDesign }) {
   const selected = elements.find((e) => e.id === selectedId) ?? null;
   const selectedElements = elements.filter((el) => selectedIds.includes(el.id));
   const textFlow = useMemo(
-    () => calculateTextFlow(elements, hydrated && fontsReady),
+    () =>
+      calculateTextFlow(
+        elements.map((el) =>
+          el.crop
+            ? { ...el, w: el.w / el.crop.w, h: el.h / el.crop.h }
+            : el
+        ),
+        hydrated && fontsReady
+      ),
     [elements, fontsReady, hydrated]
   );
   const textBoxes = elements.filter((el) => el.type === "text");
@@ -132,9 +143,9 @@ export default function Editor({ design }: { design: EditorDesign }) {
   /* ---------- Zoom ---------- */
 
   const fitScale = useCallback(() => {
-    const md = window.innerWidth >= 768;
     const margin = 32;
-    const lebar = window.innerWidth - 44 - (md ? 192 : 0) - margin * 2;
+    const sidebarWidth = window.innerWidth >= 640 ? 256 : 224;
+    const lebar = window.innerWidth - 48 - sidebarWidth - margin * 2;
     const tinggi = window.innerHeight - 152 - margin * 2;
     const s = Math.min(lebar / size.w, tinggi / size.h);
     return clamp(Math.floor(s * 100) / 100, MIN_SCALE, MAX_SCALE);
@@ -229,12 +240,8 @@ export default function Editor({ design }: { design: EditorDesign }) {
   );
 
   const selesaiAlat = useCallback(() => setTool("pilih"), []);
-  const gantiMode = useCallback(
-    () => setMode((m) => (m === "ukuran" ? "sudut" : "ukuran")),
-    []
-  );
 
-  function tambahGambar(img: UploadedImage) {
+  function tambahGambar(img: UploadedImage, x?: number, y?: number) {
     const rasio = img.height / img.width;
     let w = size.w * 0.6;
     let h = w * rasio;
@@ -245,8 +252,8 @@ export default function Editor({ design }: { design: EditorDesign }) {
     tambahElemen({
       id: uid(),
       type: "image",
-      x: round(size.w * 0.1),
-      y: round(size.h * 0.1),
+      x: round(clamp(x ?? size.w * 0.1, 0, size.w - w)),
+      y: round(clamp(y ?? size.h * 0.1, 0, size.h - h)),
       w: round(w),
       h: round(h),
       src: img.url,
@@ -254,9 +261,45 @@ export default function Editor({ design }: { design: EditorDesign }) {
     });
   }
 
+  async function unggahKeCanvas(file: File, x: number, y: number) {
+    setPesan("");
+    try {
+      const image = await uploadImageFile(file);
+      setImageLibraryRevision((revision) => revision + 1);
+      tambahGambar(image, x, y);
+    } catch (error) {
+      setPesan(error instanceof Error ? error.message : "Gagal mengunggah gambar.");
+    }
+  }
+
+  function hapusAsetGambar(asset: ImageAsset) {
+    const references = pages.flatMap((page) =>
+      page.elements.filter((el) => el.src === asset.url)
+    );
+    if (references.length === 0) return;
+
+    const removedIds = new Set(
+      references.filter((el) => el.type === "image").map((el) => el.id)
+    );
+    setPages((prev) =>
+      prev.map((page) => ({
+        ...page,
+        elements: page.elements
+          .filter((el) => !(el.type === "image" && el.src === asset.url))
+          .map((el) => (el.src === asset.url ? { ...el, src: undefined } : el)),
+      }))
+    );
+    if (selectedId && removedIds.has(selectedId)) {
+      setSelectedId(null);
+      setMode("ukuran");
+    }
+    setSelectedIds((ids) => ids.filter((id) => !removedIds.has(id)));
+  }
+
   function isiGambar(img: UploadedImage) {
     if (!selected || (selected.type !== "rect" && selected.type !== "ellipse")) return;
     updateElement(selected.id, { src: img.url, fit: "cover" });
+    setImageLibraryRevision((revision) => revision + 1);
   }
 
   function hapus() {
@@ -471,8 +514,15 @@ export default function Editor({ design }: { design: EditorDesign }) {
 
   function batal() {
     if (tool !== "pilih") setTool("pilih");
-    else if (mode === "sudut") setMode("ukuran");
+    else if (mode !== "ukuran") setMode("ukuran");
     else pilih(null);
+  }
+
+  function aktivasiObjek(id: string, clickCount: number) {
+    if (tool !== "pilih") return;
+    const element = elements.find((el) => el.id === id);
+    if (clickCount === 2) setMode("putar");
+    else if (clickCount >= 3) setMode(element?.type === "rect" ? "sudut" : "ukuran");
   }
 
   /* ---------- Operasi halaman ---------- */
@@ -565,9 +615,9 @@ export default function Editor({ design }: { design: EditorDesign }) {
           aria-label="Judul desain"
           className="min-w-0 flex-1 rounded border border-transparent px-2 py-1 text-sm font-bold focus:border-stone-300"
         />
-        <IconButton icon="undo" label="Urungkan (Ctrl+Z)" disabled={!canUndo} onClick={undo} />
-        <IconButton icon="redo" label="Ulangi (Ctrl+Y)" disabled={!canRedo} onClick={redo} />
-        <IconButton icon="help" label={shortcutTooltip("?")} onClick={() => setHelpOpen(true)} />
+        <IconButton icon="undo" label="Urungkan" shortcut="Ctrl+Z" disabled={!canUndo} onClick={undo} />
+        <IconButton icon="redo" label="Ulangi" shortcut="Ctrl+Y" disabled={!canRedo} onClick={redo} />
+        <IconButton icon="help" label="Katalog shortcut" shortcut="?" onClick={() => setHelpOpen(true)} />
         <span
           className={`hidden shrink-0 text-xs font-semibold sm:inline ${
             status === "gagal" ? "text-red-700" : "text-stone-500"
@@ -582,24 +632,16 @@ export default function Editor({ design }: { design: EditorDesign }) {
         selected={selected}
         selectedElements={selectedElements}
         onAlign={alignSelected}
-        textBoxOptions={textBoxOptions}
         paper={design.paper}
         size={size}
-        onChange={updateElement}
-        onLinkText={hubungkanTeks}
-        onLayer={lapisan}
-        onDuplicate={duplikat}
-        onDelete={hapus}
-        onFillImage={isiGambar}
-        onError={setPesan}
       />
 
       <div className="flex min-h-0 flex-1">
         <Toolbox
           tool={tool}
           onTool={setTool}
-          onImage={tambahGambar}
-          onError={setPesan}
+          activeTab={sidebarTab}
+          onTab={setSidebarTab}
         />
         <Canvas
           size={size}
@@ -615,11 +657,31 @@ export default function Editor({ design }: { design: EditorDesign }) {
           onUpdate={updateElement}
           onCreate={tambahElemen}
           onToolDone={selesaiAlat}
+          onDropImage={unggahKeCanvas}
+          onActivate={aktivasiObjek}
           onEdit={setEditingId}
-          onToggleMode={gantiMode}
           onScale={setScale}
         />
-        <LayersPanel elements={elements} selectedId={selectedId} onSelect={pilih} />
+        <EditorSidebar
+          tab={sidebarTab}
+          onTab={setSidebarTab}
+          selected={selected}
+          mode={mode}
+          textBoxOptions={textBoxOptions}
+          onChange={updateElement}
+          onLinkText={hubungkanTeks}
+          onLayer={lapisan}
+          onDuplicate={duplikat}
+          onDelete={hapus}
+          onFillImage={isiGambar}
+          onError={setPesan}
+          elements={elements}
+          selectedId={selectedId}
+          onSelect={pilih}
+          refreshKey={imageLibraryRevision}
+          onSelectImage={(image) => tambahGambar(image)}
+          onDeleteImage={hapusAsetGambar}
+        />
       </div>
 
       <PageStrip

@@ -128,6 +128,7 @@ export function useShortcuts(aksi: AksiPintasan, aktif = true) {
         else if (k === "r") a.tool("persegi");
         else if (k === "e") a.tool("elips");
         else if (k === "l") a.tool("garis");
+        else if (k === "x") a.tool("crop");
         return;
       }
       if (k === "v") a.tool("pilih");

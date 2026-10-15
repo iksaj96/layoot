@@ -20,6 +20,12 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Supabase: profil dan pustaka gambar
+
+Jalankan isi [`supabase/migrations/20261015000000_profiles_and_images.sql`](./supabase/migrations/20261015000000_profiles_and_images.sql) melalui SQL Editor Supabase. Migrasi ini membuat `profiles` yang disinkronkan dari `auth.users`, membuat `images` dengan `user_id`, menyiapkan kebijakan akses/storage, serta mengisi data profil dan gambar lama dari bucket `design-assets`.
+
+Sesudah migrasi, unggahan gambar melalui pustaka, toolbar, maupun drag-and-drop menyimpan metadata pemilik ke tabel `public.images`. Pustaka hanya menampilkan gambar milik akun yang sedang masuk.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

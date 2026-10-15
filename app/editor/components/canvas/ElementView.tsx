@@ -18,7 +18,8 @@ type Props = {
   onDown: (e: React.PointerEvent, el: DesignElement) => void;
   onHandleDown: (e: React.PointerEvent, el: DesignElement, h: Handle) => void;
   onRadiusDown: (e: React.PointerEvent, el: DesignElement) => void;
-  onEdit: (id: string) => void;
+  onRotateDown: (e: React.PointerEvent, el: DesignElement) => void;
+  onActivate: (id: string, clickCount: number) => void;
   onText: (id: string, text: string) => void;
   onEditEnd: () => void;
 };
@@ -46,17 +47,23 @@ const ElementView = memo(function ElementView({
   onDown,
   onHandleDown,
   onRadiusDown,
-  onEdit,
+  onRotateDown,
+  onActivate,
   onText,
   onEditEnd,
 }: Props) {
   const isShape = el.type === "rect" || el.type === "ellipse";
-  const radius = borderRadiusCss(el, (mm) => `${mm * scale}px`);
+  const crop = el.crop ?? { x: 0, y: 0, w: 1, h: 1 };
+  const sourceElement = el.crop
+    ? { ...el, w: el.w / crop.w, h: el.h / crop.h }
+    : el;
+  const radius = borderRadiusCss(sourceElement, (mm) => `${mm * scale}px`);
   const modeSudut = selected && mode === "sudut" && el.type === "rect";
+  const modePutar = selected && mode === "putar";
   const shapeStrokeWidth =
     el.stroke === "transparent" ? 0 : (el.strokeWidth ?? 0.5) * scale;
   const innerRadius = borderRadiusCss(
-    el,
+    sourceElement,
     (mm) => `${Math.max(0, mm * scale - shapeStrokeWidth)}px`
   );
   const lineWidth = (el.strokeWidth ?? 0.5) * scale;
@@ -64,6 +71,10 @@ const ElementView = memo(function ElementView({
   const lineH = el.h * scale;
   const lineBoxW = Math.max(lineW, lineWidth, 8);
   const lineBoxH = Math.max(lineH, lineWidth, 8);
+  const viewW = el.type === "line" ? lineBoxW : el.w * scale;
+  const viewH = el.type === "line" ? lineBoxH : el.h * scale;
+  const contentW = viewW / crop.w;
+  const contentH = viewH / crop.h;
 
   const textStyle: React.CSSProperties = {
     width: "100%",
@@ -84,7 +95,16 @@ const ElementView = memo(function ElementView({
   return (
     <div
       onPointerDown={(e) => onDown(e, el)}
-      onDoubleClick={() => el.type === "text" && onEdit(el.id)}
+      onClick={(e) => {
+        if (editing) return;
+        if (
+          e.target instanceof Element &&
+          e.target.closest("[data-element-handle]")
+        ) {
+          return;
+        }
+        onActivate(el.id, e.detail);
+      }}
       style={{
         position: "absolute",
         left: el.x * scale - (el.type === "line" && el.w === 0 ? lineBoxW / 2 : 0),
@@ -94,15 +114,27 @@ const ElementView = memo(function ElementView({
         pointerEvents: "auto",
         cursor: editing ? "text" : cursor,
         touchAction: "none",
+        overflow: "hidden",
         outline: selected ? "1px solid #4f46e5" : "none",
-        background: isShape ? el.fill : undefined,
-        borderRadius: radius,
-        boxSizing: isShape ? "border-box" : undefined,
-        border: isShape
-          ? `${shapeStrokeWidth}px solid ${el.stroke ?? "#1c1917"}`
-          : undefined,
+        transform: `rotate(${el.rotation ?? 0}deg) scaleX(${el.flipX ? -1 : 1}) scaleY(${el.flipY ? -1 : 1})`,
+        transformOrigin: `${((0.5 - crop.x) / crop.w) * 100}% ${((0.5 - crop.y) / crop.h) * 100}%`,
       }}
     >
+      <div
+        style={{
+          position: "absolute",
+          left: (-crop.x / crop.w) * viewW,
+          top: (-crop.y / crop.h) * viewH,
+          width: contentW,
+          height: contentH,
+          background: isShape ? el.fill : undefined,
+          borderRadius: radius,
+          boxSizing: isShape ? "border-box" : undefined,
+          border: isShape
+            ? `${shapeStrokeWidth}px solid ${el.stroke ?? "#1c1917"}`
+            : undefined,
+        }}
+      >
       {el.type === "line" && (
         <svg
           width={lineBoxW}
@@ -204,6 +236,7 @@ const ElementView = memo(function ElementView({
           }}
         />
       )}
+      </div>
 
       {/* Titik ubah ukuran */}
       {selected &&
@@ -213,6 +246,7 @@ const ElementView = memo(function ElementView({
         HANDLES.map((hd) => (
           <div
             key={hd.h}
+            data-element-handle
             onPointerDown={(e) => onHandleDown(e, el, hd.h)}
             style={{
               position: "absolute",
@@ -230,6 +264,7 @@ const ElementView = memo(function ElementView({
       {/* Titik atur sudut (mode sudut) */}
       {selected && showHandles && !editing && modeSudut && (
         <div
+          data-element-handle
           title="Seret untuk mengatur sudut"
           onPointerDown={(e) => onRadiusDown(e, el)}
           style={{
@@ -243,6 +278,28 @@ const ElementView = memo(function ElementView({
             border: "2px solid #fff",
             boxShadow: "0 0 0 1px #1c1917",
             cursor: "ew-resize",
+            touchAction: "none",
+          }}
+        />
+      )}
+
+      {selected && showHandles && !editing && modePutar && (
+        <div
+          data-element-handle
+          title="Seret untuk memutar objek"
+          onPointerDown={(e) => onRotateDown(e, el)}
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: -30,
+            width: 14,
+            height: 14,
+            transform: "translateX(-50%)",
+            borderRadius: "50%",
+            background: "#4f46e5",
+            border: "2px solid #fff",
+            boxShadow: "0 0 0 1px #1c1917",
+            cursor: "grab",
             touchAction: "none",
           }}
         />

@@ -21,8 +21,9 @@ type Props = {
   onUpdate: (id: string, patch: Partial<DesignElement>) => void;
   onCreate: (el: DesignElement) => void;
   onToolDone: () => void;
+  onDropImage: (file: File, x: number, y: number) => void;
+  onActivate: (id: string, clickCount: number) => void;
   onEdit: (id: string | null) => void;
-  onToggleMode: () => void;
   onScale: (s: number) => void;
 };
 
@@ -40,8 +41,9 @@ export default function Canvas({
   onUpdate,
   onCreate,
   onToolDone,
+  onDropImage,
+  onActivate,
   onEdit,
-  onToggleMode,
   onScale,
 }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -49,6 +51,7 @@ export default function Canvas({
   const scaleRef = useRef(scale);
   const panRef = useRef({ x: 0, y: 0 });
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [cropPreview, setCropPreview] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const sudahNavigasi = useRef(false);
   const sentuhan = useRef(new Map<number, { x: number; y: number }>());
   const gestureAwal = useRef<{
@@ -65,6 +68,136 @@ export default function Canvas({
   } | null>(null);
   const pageW = size.w * PX_PER_MM;
   const pageH = size.h * PX_PER_MM;
+
+  const titikHalaman = useCallback((clientX: number, clientY: number) => {
+    const wrap = wrapRef.current;
+    if (!wrap) return { x: 0, y: 0 };
+    const bounds = wrap.getBoundingClientRect();
+    return {
+      x: (clientX - bounds.left - panRef.current.x) / scaleRef.current / PX_PER_MM,
+      y: (clientY - bounds.top - panRef.current.y) / scaleRef.current / PX_PER_MM,
+    };
+  }, []);
+
+  const startCrop = useCallback(
+    (e: React.PointerEvent, el: DesignElement) => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      onSelect(el.id);
+      const start = titikHalaman(e.clientX, e.clientY);
+      setCropPreview({ x: start.x, y: start.y, w: 0, h: 0 });
+      let current = start;
+
+      const onMove = (event: PointerEvent) => {
+        current = titikHalaman(event.clientX, event.clientY);
+        setCropPreview({
+          x: Math.min(start.x, current.x),
+          y: Math.min(start.y, current.y),
+          w: Math.abs(current.x - start.x),
+          h: Math.abs(current.y - start.y),
+        });
+      };
+      const onUp = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onUp);
+        setCropPreview(null);
+
+        const dragged = {
+          left: Math.min(start.x, current.x),
+          top: Math.min(start.y, current.y),
+          right: Math.max(start.x, current.x),
+          bottom: Math.max(start.y, current.y),
+        };
+        const linePadding =
+          el.type === "line" ? Math.max((el.strokeWidth ?? 0.5) / 2, 0.5) : 0;
+        const box = {
+          left: Math.max(el.x - linePadding, dragged.left),
+          top: Math.max(el.y - linePadding, dragged.top),
+          right: Math.min(el.x + Math.max(el.w, 1) + linePadding, dragged.right),
+          bottom: Math.min(el.y + Math.max(el.h, 1) + linePadding, dragged.bottom),
+        };
+        const cropW = box.right - box.left;
+        const cropH = box.bottom - box.top;
+        if (
+          el.type === "line"
+            ? cropW <= 0 || cropH <= 0
+            : cropW < 1 || cropH < 1
+        ) return;
+
+        if (el.type === "line") {
+          const dx = el.w;
+          const dy = el.h;
+          let x0 = el.lineFlip ? dx : 0;
+          let y0 = 0;
+          let x1 = el.lineFlip ? 0 : dx;
+          let y1 = dy;
+          const minX = box.left - el.x;
+          const minY = box.top - el.y;
+          const maxX = box.right - el.x;
+          const maxY = box.bottom - el.y;
+          const vx = x1 - x0;
+          const vy = y1 - y0;
+          let t0 = 0;
+          let t1 = 1;
+          const clip = (p: number, q: number) => {
+            if (p === 0) return q >= 0;
+            const ratio = q / p;
+            if (p < 0) t0 = Math.max(t0, ratio);
+            else t1 = Math.min(t1, ratio);
+            return t0 <= t1;
+          };
+          if (
+            !clip(-vx, x0 - minX) ||
+            !clip(vx, maxX - x0) ||
+            !clip(-vy, y0 - minY) ||
+            !clip(vy, maxY - y0)
+          ) return;
+          const startX = x0 + t0 * vx;
+          const startY = y0 + t0 * vy;
+          const endX = x0 + t1 * vx;
+          const endY = y0 + t1 * vy;
+          x0 = Math.min(startX, endX);
+          y0 = Math.min(startY, endY);
+          x1 = Math.max(startX, endX);
+          y1 = Math.max(startY, endY);
+          if (Math.hypot(x1 - x0, y1 - y0) < 1) return;
+          onUpdate(el.id, {
+            x: round(el.x + x0),
+            y: round(el.y + y0),
+            w: round(x1 - x0),
+            h: round(y1 - y0),
+            lineFlip: (startX - endX) * (startY - endY) < 0,
+            crop: undefined,
+          });
+          return;
+        }
+
+        const crop = el.crop ?? { x: 0, y: 0, w: 1, h: 1 };
+        const left = (box.left - el.x) / el.w;
+        const top = (box.top - el.y) / el.h;
+        const width = cropW / el.w;
+        const height = cropH / el.h;
+        onUpdate(el.id, {
+          x: round(box.left),
+          y: round(box.top),
+          w: round(cropW),
+          h: round(cropH),
+          crop: {
+            x: crop.x + left * crop.w,
+            y: crop.y + top * crop.h,
+            w: width * crop.w,
+            h: height * crop.h,
+          },
+        });
+      };
+
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onUp);
+    },
+    [onSelect, onUpdate, titikHalaman]
+  );
 
   useEffect(() => {
     scaleRef.current = scale;
@@ -278,7 +411,7 @@ export default function Canvas({
       const start = sentuhanTunggal.current;
       if (points.length === 1 && start && !start.started &&
           Math.hypot(e.clientX - start.x, e.clientY - start.y) >= 5 &&
-          tool !== "pilih") {
+          tool !== "pilih" && tool !== "crop") {
         start.started = true;
         sudahNavigasi.current = true;
         startDrawAt(start.x, start.y);
@@ -315,7 +448,7 @@ export default function Canvas({
       const start = sentuhanTunggal.current;
       if (start?.id === e.pointerId && !start.started && !gestureAwal.current) {
         if (tool === "pilih") onSelect(null);
-        else startDrawAt(start.x, start.y, true);
+        else if (tool !== "crop") startDrawAt(start.x, start.y, true);
       }
       if (sentuhan.current.size === 0) sentuhanTunggal.current = null;
     };
@@ -346,8 +479,7 @@ export default function Canvas({
     [startDrawAt]
   );
 
-  /* Geser dan ubah ukuran objek. Klik (tanpa geser) pada persegi yang sudah
-     terpilih mengganti mode ukuran <-> sudut. */
+  /* Geser dan ubah ukuran objek. */
   const startDrag = useCallback(
     (e: React.PointerEvent, el: DesignElement, aksi: "move" | Handle) => {
       if (e.button !== 0) return;
@@ -412,16 +544,13 @@ export default function Canvas({
         window.removeEventListener("pointermove", onMove);
         window.removeEventListener("pointerup", onUp);
         window.removeEventListener("pointercancel", onUp);
-        if (!bergerak && !shiftSelect && aksi === "move" && sudahDipilih && el.type === "rect") {
-          onToggleMode();
-        }
       };
 
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
       window.addEventListener("pointercancel", onUp);
     },
-    [scale, selectedIds, onSelect, onUpdate, onToggleMode]
+    [scale, selectedIds, onSelect, onUpdate]
   );
 
   /* Atur kelengkungan sudut persegi */
@@ -451,15 +580,55 @@ export default function Canvas({
     [scale, onUpdate]
   );
 
+  const onRotateDown = useCallback(
+    (e: React.PointerEvent, el: DesignElement) => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+
+      const wrap = wrapRef.current;
+      if (!wrap) return;
+      const bounds = wrap.getBoundingClientRect();
+      const centerX =
+        bounds.left + panRef.current.x + (el.x + el.w / 2) * scaleRef.current;
+      const centerY =
+        bounds.top + panRef.current.y + (el.y + el.h / 2) * scaleRef.current;
+      const startAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX);
+      const initialRotation = el.rotation ?? 0;
+
+      const onMove = (event: PointerEvent) => {
+        const angle = Math.atan2(event.clientY - centerY, event.clientX - centerX);
+        const delta = ((angle - startAngle + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+        const rotation = initialRotation + (delta * 180) / Math.PI;
+        onUpdate(el.id, {
+          rotation: round(((rotation + 180) % 360 + 360) % 360 - 180),
+        });
+      };
+      const onUp = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onUp);
+      };
+
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onUp);
+    },
+    [onUpdate]
+  );
+
   const onDown = useCallback(
     (e: React.PointerEvent, el: DesignElement) => {
+      if (tool === "crop") {
+        startCrop(e, el);
+        return;
+      }
       if (tool !== "pilih") {
         startDraw(e);
         return;
       }
       startDrag(e, el, "move");
     },
-    [tool, startDraw, startDrag]
+    [tool, startDraw, startDrag, startCrop]
   );
 
   const onHandleDown = useCallback(
@@ -481,13 +650,42 @@ export default function Canvas({
       onSelect(null);
       return;
     }
+    if (tool === "crop") {
+      const activeElement = elements.find((el) => selectedIds.includes(el.id));
+      if (activeElement) startCrop(e, activeElement);
+      return;
+    }
     startDraw(e);
+  }
+
+  function onDragOver(e: React.DragEvent) {
+    if (!Array.from(e.dataTransfer.types).includes("Files")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  }
+
+  function onDrop(e: React.DragEvent) {
+    const file = Array.from(e.dataTransfer.files).find((item) =>
+      item.type.startsWith("image/")
+    );
+    if (!file) return;
+
+    e.preventDefault();
+    const bounds = wrapRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    onDropImage(
+      file,
+      round((e.clientX - bounds.left - panRef.current.x) / scaleRef.current),
+      round((e.clientY - bounds.top - panRef.current.y) / scaleRef.current)
+    );
   }
 
   return (
     <div
       ref={wrapRef}
       onPointerDown={onWorkspacePointerDown}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
       className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-stone-300"
       style={{ touchAction: "none", cursor: tool === "pilih" ? "default" : "crosshair" }}
     >
@@ -556,11 +754,24 @@ export default function Canvas({
               onDown={onDown}
               onHandleDown={onHandleDown}
               onRadiusDown={onRadiusDown}
-              onEdit={onEdit}
+              onRotateDown={onRotateDown}
+              onActivate={onActivate}
               onText={onText}
               onEditEnd={onEditEnd}
             />
           ))}
+          {cropPreview && (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute border-2 border-dashed border-indigo-600 bg-indigo-400/20"
+              style={{
+                left: cropPreview.x * PX_PER_MM,
+                top: cropPreview.y * PX_PER_MM,
+                width: cropPreview.w * PX_PER_MM,
+                height: cropPreview.h * PX_PER_MM,
+              }}
+            />
+          )}
         </div>
       </div>
     </div>

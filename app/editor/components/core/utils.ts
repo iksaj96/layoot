@@ -5,10 +5,10 @@ export const PAD = 60; // px, ruang kerja di sekeliling kertas
 export const MIN_SCALE = 0.1;
 export const MAX_SCALE = 8;
 
-export type Tool = "pilih" | "teks" | "persegi" | "elips" | "garis";
+export type Tool = "pilih" | "teks" | "persegi" | "elips" | "garis" | "crop";
 export type AlignAction = "C" | "E" | "L" | "R" | "T" | "B" | "P";
 export type Handle = "nw" | "n" | "ne" | "w" | "e" | "sw" | "s" | "se";
-export type Mode = "ukuran" | "sudut";
+export type Mode = "ukuran" | "putar" | "sudut";
 export type Status = "tersimpan" | "menyimpan" | "belum" | "gagal";
 
 export const LABEL_STATUS: Record<Status, string> = {

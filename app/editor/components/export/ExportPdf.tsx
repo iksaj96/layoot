@@ -23,10 +23,13 @@ function CetakElemen({
   textFlow?: TextFlowSegment;
 }) {
   const isShape = el.type === "rect" || el.type === "ellipse";
-  const radius = borderRadiusCss(el, (mm) => `${mm}mm`);
+  const crop = el.crop ?? { x: 0, y: 0, w: 1, h: 1 };
+  const sourceElement = el.crop
+    ? { ...el, w: el.w / crop.w, h: el.h / crop.h }
+    : el;
   const shapeStrokeWidth = el.stroke === "transparent" ? 0 : el.strokeWidth ?? 0.5;
   const innerRadius = borderRadiusCss(
-    el,
+    sourceElement,
     (mm) => `${Math.max(0, mm - shapeStrokeWidth)}mm`
   );
   const strokeWidth = el.strokeWidth ?? 0.5;
@@ -34,24 +37,37 @@ function CetakElemen({
   const lineH = el.h;
   const lineBoxW = Math.max(lineW, strokeWidth);
   const lineBoxH = Math.max(lineH, strokeWidth);
+  const viewW = el.type === "line" ? lineBoxW : el.w;
+  const viewH = el.type === "line" ? lineBoxH : el.h;
 
   return (
     <div
       style={{
         position: "absolute",
-        left: `${el.x}mm`,
-        top: `${el.y}mm`,
-        width: `${el.w}mm`,
-        height: `${el.h}mm`,
-        background: isShape ? el.fill : undefined,
-        borderRadius: radius,
-        boxSizing: isShape ? "border-box" : undefined,
-        border: isShape
-          ? `${shapeStrokeWidth}mm solid ${el.stroke ?? "#1c1917"}`
-          : undefined,
-        overflow: isShape && el.src ? "hidden" : undefined,
+        left: `${el.x - (el.type === "line" && lineW === 0 ? viewW / 2 : 0)}mm`,
+        top: `${el.y - (el.type === "line" && lineH === 0 ? viewH / 2 : 0)}mm`,
+        width: `${viewW}mm`,
+        height: `${viewH}mm`,
+        transform: `rotate(${el.rotation ?? 0}deg) scaleX(${el.flipX ? -1 : 1}) scaleY(${el.flipY ? -1 : 1})`,
+        transformOrigin: `${((0.5 - crop.x) / crop.w) * 100}% ${((0.5 - crop.y) / crop.h) * 100}%`,
+        overflow: "hidden",
       }}
     >
+      <div
+        style={{
+          position: "absolute",
+          left: `${(-crop.x / crop.w) * viewW}mm`,
+          top: `${(-crop.y / crop.h) * viewH}mm`,
+          width: `${viewW / crop.w}mm`,
+          height: `${viewH / crop.h}mm`,
+          background: isShape ? el.fill : undefined,
+          borderRadius: borderRadiusCss(el, (mm) => `${mm / crop.w}mm`),
+          boxSizing: isShape ? "border-box" : undefined,
+          border: isShape
+            ? `${shapeStrokeWidth}mm solid ${el.stroke ?? "#1c1917"}`
+            : undefined,
+        }}
+      >
       {el.type === "line" && (
         <svg
           width={`${lineBoxW}mm`}
@@ -59,8 +75,8 @@ function CetakElemen({
           viewBox={`0 0 ${lineBoxW} ${lineBoxH}`}
           style={{
             position: "absolute",
-            left: lineW === 0 ? `${-lineBoxW / 2}mm` : 0,
-            top: lineH === 0 ? `${-lineBoxH / 2}mm` : 0,
+            left: 0,
+            top: 0,
             overflow: "visible",
           }}
         >
@@ -139,6 +155,7 @@ function CetakElemen({
           }}
         />
       )}
+      </div>
     </div>
   );
 }
@@ -204,7 +221,13 @@ export default function ExportPdf({ title, pages, size }: Props) {
               }
             `}</style>
             {pages.map((p, i) => {
-              const textFlow = calculateTextFlow(p.elements);
+              const textFlow = calculateTextFlow(
+                p.elements.map((el) =>
+                  el.crop
+                    ? { ...el, w: el.w / el.crop.w, h: el.h / el.crop.h }
+                    : el
+                )
+              );
               return (
                 <div
                   key={p.id}

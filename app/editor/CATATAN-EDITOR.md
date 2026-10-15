@@ -35,8 +35,11 @@ app/editor/
     │   ├── Canvas.tsx         Kertas kerja: zoom scroll, geser klik roda tengah, gambar objek baru, geser/ubah ukuran, atur sudut
     │   └── ElementView.tsx    Tampilan SATU objek di layar (teks, bentuk, gambar) + 8 pegangan ukuran + pegangan sudut
     ├── toolbar/
-    │   ├── Toolbox.tsx        Kolom alat kiri (pilih, teks, persegi, elips, gambar)
-    │   ├── PropertyBar.tsx    Bilah properti atas: posisi, ukuran, font, warna, sudut, gambar isi, tombol lapisan
+    │   ├── Toolbox.tsx        Kolom alat kiri (pilih, teks, persegi, elips, garis, crop) + pintasan
+    │   ├── PropertyBar.tsx    Bilah atas ringkas: perataan saat banyak objek dipilih
+    │   ├── PropertiesPanel.tsx Properti detail objek di sidebar
+    │   ├── EditorSidebar.tsx  Sidebar tab Properti, Katalog gambar, dan Objek
+    │   ├── ImageLibraryPanel.tsx Katalog gambar dari Supabase Storage
     │   ├── ColorPicker.tsx    Kotak warna kustom: panel warna, hue, hex, pipet, warna cepat
     │   ├── FontSelect.tsx     Dropdown jenis huruf
     │   └── ImageUpload.tsx    Unggah gambar ke Supabase Storage (kompres otomatis)
@@ -68,11 +71,13 @@ lib/types.ts                   Tipe data: Paper, DesignElement, DesignPage, Desi
 | Bagian yang mau diubah | File |
 |---|---|
 | Bilah judul paling atas (judul, undo/redo, bantuan, status simpan, tombol Ekspor PDF) | `Editor.tsx` (bagian `<header>`), tombol PDF di `export/ExportPdf.tsx` |
-| Bilah properti di bawah judul (X, Y, L, T, font, warna, perataan, kolom, alur teks, sudut, tombol lapisan) | `toolbar/PropertyBar.tsx` |
-| Kolom alat di kiri | `toolbar/Toolbox.tsx` |
-| Daftar objek di kanan | `panels/LayersPanel.tsx` |
+| Bilah atas (perataan objek terpilih) | `toolbar/PropertyBar.tsx` |
+| Properti detail dan tab sidebar Properti/Katalog/Objek | `toolbar/PropertiesPanel.tsx` + `toolbar/EditorSidebar.tsx` |
+| Kolom alat di kiri, termasuk Crop, dan shortcut pada tombol | `toolbar/Toolbox.tsx` + `ui/Icon.tsx` |
+| Katalog gambar di sidebar | `toolbar/ImageLibraryPanel.tsx` |
+| Daftar objek di tab Objek sidebar | `panels/LayersPanel.tsx` |
 | Kertas / area kerja (latar abu-abu, garis margin, outline kertas) | `canvas/Canvas.tsx` |
-| Tampilan satu objek (teks, bentuk, gambar, garis seleksi, 8 pegangan ukuran, titik sudut oranye) | `canvas/ElementView.tsx` |
+| Tampilan satu objek, pegangan ukuran, putar, dan sudut | `canvas/ElementView.tsx` |
 | Bilah halaman (Halaman 1, 2, tambah, duplikat, hapus) | `panels/PageStrip.tsx` |
 | Bilah paling bawah (info objek, zoom %) | `panels/StatusBar.tsx` |
 | Kotak pemilih warna | `toolbar/ColorPicker.tsx` |
@@ -84,35 +89,38 @@ lib/types.ts                   Tipe data: Paper, DesignElement, DesignPage, Desi
 ## Cari file dari JENIS PERUBAHAN
 | Mau apa | File yang diubah |
 |---|---|
-| Tambah properti objek baru (mis. bayangan, transparansi, garis tepi) | `lib/types.ts` + `canvas/ElementView.tsx` + `export/ExportPdf.tsx` + `toolbar/PropertyBar.tsx` (+ `core/elementOps.ts` bila ada logika) |
+| Tambah properti objek baru (mis. bayangan, transparansi, garis tepi) | `lib/types.ts` + `canvas/ElementView.tsx` + `export/ExportPdf.tsx` + `toolbar/PropertiesPanel.tsx` (+ `core/elementOps.ts` bila ada logika) |
 | Tambah jenis objek baru (mis. garis, bintang) | `lib/types.ts` + `core/utils.ts` (tipe Tool) + `toolbar/Toolbox.tsx` + `canvas/Canvas.tsx` (startDraw) + `canvas/ElementView.tsx` + `export/ExportPdf.tsx` + `panels/LayersPanel.tsx` + `panels/StatusBar.tsx` + `ui/Icon.tsx` + `hooks/useShortcuts.ts` + `panels/ShortcutHelp.tsx` |
 | Tambah pintasan keyboard | `hooks/useShortcuts.ts` + `Editor.tsx` (objek `aksi` dan fungsinya) + `panels/ShortcutHelp.tsx` (daftar) |
 | Tambah font | `core/fonts.ts` saja |
 | Tambah ikon | `ui/Icon.tsx` saja |
-| Tambah tombol di bilah properti | `toolbar/PropertyBar.tsx` (+ `Editor.tsx` jika butuh fungsi baru) |
+| Tambah tombol properti objek | `toolbar/PropertiesPanel.tsx` (+ `Editor.tsx` jika butuh fungsi baru) |
 | Ubah cara menggeser / mengubah ukuran / menggambar objek | `canvas/Canvas.tsx` |
 | Ubah zoom, geser tampilan, ukuran awal kertas di layar | `canvas/Canvas.tsx` + `Editor.tsx` (fitScale, zoom) + `core/utils.ts` (batas zoom) |
 | Ubah salin / tempel / hapus / duplikat / urutan lapisan | `Editor.tsx` + `core/elementOps.ts` |
 | Ubah undo/redo | `hooks/useHistory.ts` (+ `Editor.tsx` bila kunci penggabungan berubah) |
 | Ubah simpan otomatis / koneksi Supabase | `Editor.tsx` (bagian "Simpan otomatis"), `[id]/page.tsx` (pengambilan data) |
 | Ubah unggah gambar (ukuran maks, format, kompres) | `toolbar/ImageUpload.tsx` |
+| Pustaka gambar, drag-and-drop, hapus aset Storage | `toolbar/ImageLibraryPanel.tsx` + `toolbar/ImageUpload.tsx` + `Editor.tsx` + `canvas/Canvas.tsx` |
 | Ubah ukuran kertas / jenis kertas | `lib/types.ts` (PAPER_SIZE_MM) + `Editor.tsx` |
 | Ubah warna cepat di pemilih warna | `core/color.ts` |
 | Ubah hasil PDF (tampil beda dari layar) | `export/ExportPdf.tsx` (dan cek `canvas/ElementView.tsx` agar tetap sama) |
 | Halaman (tambah/hapus/urut) | `Editor.tsx` + `panels/PageStrip.tsx` |
-| Seleksi banyak objek, rotasi (belum ada) | `lib/types.ts` + `Editor.tsx` (state selectedIds) + `canvas/Canvas.tsx` + `canvas/ElementView.tsx` + `export/ExportPdf.tsx` + `toolbar/PropertyBar.tsx` + `hooks/useShortcuts.ts` |
+| Seleksi banyak objek, putar, dan balik | `lib/types.ts` + `Editor.tsx` + `canvas/Canvas.tsx` + `canvas/ElementView.tsx` + `export/ExportPdf.tsx` + `toolbar/PropertyBar.tsx` |
+| Crop objek dan gambar | `lib/types.ts` + `core/utils.ts` + `toolbar/Toolbox.tsx` + `canvas/Canvas.tsx` + `canvas/ElementView.tsx` + `export/ExportPdf.tsx` + `hooks/useShortcuts.ts` + `core/shortcuts.ts` |
 
 ## Siapa mengimpor siapa (rantai efek)
 - `Editor.tsx` mengimpor: semua komponen di `canvas/`, `toolbar/`, `panels/`, `export/`, `ui/Icon`, semua `hooks/`, dan `core/utils`, `core/elementOps`.
 - `canvas/Canvas.tsx` memakai `canvas/ElementView.tsx` dan `core/utils`.
 - `canvas/ElementView.tsx` memakai `core/elementOps`, `core/fonts`, `core/utils`.
 - `export/ExportPdf.tsx` memakai `core/elementOps`, `core/fonts`, `ui/Icon`. Logika tampilan sama dengan `ElementView.tsx` tetapi satuan mm, jadi dua file ini harus selalu dijaga sinkron.
-- `toolbar/PropertyBar.tsx` memakai `ColorPicker`, `FontSelect`, `ImageUpload`, `ui/NumberField`, `ui/Icon`, `core/elementOps`.
+- `toolbar/PropertiesPanel.tsx` memakai `ColorPicker`, `FontSelect`, `ImageUpload`, `ui/NumberField`, `ui/Icon`, `core/elementOps`.
+- `toolbar/EditorSidebar.tsx` merakit panel properti, katalog gambar, dan daftar objek.
 - `hooks/useShortcuts.ts` hanya memanggil fungsi yang dikirim `Editor.tsx` (tidak menyentuh state langsung).
 - Semua file memakai tipe dari `lib/types.ts`.
 
 ## Model data (lib/types.ts)
-`DesignElement`: id, type (`text` | `rect` | `ellipse` | `image`), x, y, w, h (mm), text, fontFamily, fontSize (pt), bold, italic, underline, align, columns, nextTextBoxId, color, fill, radius (mm, hanya rect), src, fit (`cover` | `contain`).
+`DesignElement`: id, type (`text` | `rect` | `ellipse` | `image` | `line`), x, y, w, h (mm), text, fontFamily, fontSize (pt), bold, italic, underline, align, columns, nextTextBoxId, color, fill, radius (mm), rotation (derajat), flipX, flipY, src, fit (`cover` | `contain`), crop (jendela crop relatif).
 `src` dipakai oleh `image` dan juga sebagai gambar isi di dalam `rect`/`ellipse`.
 Urutan array `elements` = urutan lapisan (elemen terakhir paling atas).
 Field baru harus opsional agar desain lama tetap aman. `pages` disimpan sebagai JSON di Supabase, jadi tidak perlu ubah tabel.
@@ -121,7 +129,9 @@ Field baru harus opsional agar desain lama tetap aman. `pages` disimpan sebagai 
 - **State utama** ada di `Editor.tsx`. Komponen lain hanya menerima props dan callback.
 - **Undo/redo**: `setPages(fn, kunci?)` dari `useHistory`. Kunci sama dalam 0,7 detik jadi satu langkah.
 - **Simpan otomatis**: tertunda 1,2 detik setelah `pages` atau `title` berubah. `Ctrl+S` simpan langsung.
-- **Mode sudut persegi**: klik persegi terpilih (tanpa geser) mengganti mode `ukuran` <-> `sudut`.
+- **Mode transformasi**: klik objek dua kali untuk mode putar/balik; klik tiga kali pada persegi untuk mode sudut.
+- **Pustaka gambar**: tombol gambar membuka koleksi pada bucket `design-assets`; unggahan dari pustaka atau drag-and-drop tersimpan di Storage, dan hapus aset juga melepaskan referensinya dari desain ini.
+- **Data Supabase**: jalankan `supabase/migrations/20261015000000_profiles_and_images.sql` untuk membuat/sinkronisasi `profiles` dan `images`, termasuk backfill gambar lama dari bucket.
 - **Zoom**: scroll di `Canvas.tsx` (listener wheel non-passive), menjaga titik di bawah kursor. Geser tampilan dengan klik roda tengah.
 - **Font**: font sistem lebih dulu, lalu pengganti metrik-setara dari Google Fonts (Tinos, Arimo, Carlito, dll).
 - **Ekspor PDF**: `ExportPdf.tsx` merender semua halaman di `#area-cetak` dengan satuan mm, lalu `window.print()`.
@@ -136,10 +146,10 @@ Catatan: Ctrl+PageUp/PageDown dipakai Chrome untuk pindah tab, jadi tidak bisa d
 
 ## Belum ada
 - Seleksi banyak objek (kotak seleksi, Shift+klik, Ctrl+A).
-- Rotasi objek.
 - Penggaris (sengaja dihapus).
 
 ## Riwayat perubahan
 (Tambahkan satu baris tiap selesai perubahan besar: tanggal, apa yang berubah, file yang disentuh.)
 - 2026-10-15: Struktur folder dirapikan; penggaris dihapus; zoom scroll + geser klik roda tengah; shortcut + undo/redo; banyak font; gambar di dalam bentuk; sudut persegi; pemilih warna kustom.
 - 2026-10-15: Kotak teks mendukung rata kiri-kanan, kolom, dan alur teks ke kotak berikutnya; layar dan PDF memakai pembagian teks yang sama.
+- 2026-10-15: Properti objek dipindah ke sidebar bertab Properti/Katalog/Objek, alat Crop mendukung objek dan gambar, serta shortcut ditampilkan pada tombol yang memilikinya.
