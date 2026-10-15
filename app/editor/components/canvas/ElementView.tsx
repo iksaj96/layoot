@@ -1,0 +1,215 @@
+import { memo } from "react";
+import type { DesignElement } from "@/lib/types";
+import { borderRadiusCss, radiusOf } from "../core/elementOps";
+import { fontCss } from "../core/fonts";
+import type { TextFlowSegment } from "../core/textFlow";
+import { PT_TO_MM } from "../core/utils";
+import type { Handle, Mode } from "../core/utils";
+
+type Props = {
+  el: DesignElement;
+  scale: number;
+  selected: boolean;
+  editing: boolean;
+  textFlow?: TextFlowSegment;
+  cursor: string;
+  mode: Mode;
+  onDown: (e: React.PointerEvent, el: DesignElement) => void;
+  onHandleDown: (e: React.PointerEvent, el: DesignElement, h: Handle) => void;
+  onRadiusDown: (e: React.PointerEvent, el: DesignElement) => void;
+  onEdit: (id: string) => void;
+  onText: (id: string, text: string) => void;
+  onEditEnd: () => void;
+};
+
+const HANDLES: { h: Handle; pos: React.CSSProperties; cursor: string }[] = [
+  { h: "nw", pos: { left: -5, top: -5 }, cursor: "nwse-resize" },
+  { h: "n", pos: { left: "50%", top: -5, transform: "translateX(-50%)" }, cursor: "ns-resize" },
+  { h: "ne", pos: { right: -5, top: -5 }, cursor: "nesw-resize" },
+  { h: "e", pos: { right: -5, top: "50%", transform: "translateY(-50%)" }, cursor: "ew-resize" },
+  { h: "sw", pos: { left: -5, bottom: -5 }, cursor: "nesw-resize" },
+  { h: "s", pos: { left: "50%", bottom: -5, transform: "translateX(-50%)" }, cursor: "ns-resize" },
+  { h: "se", pos: { right: -5, bottom: -5 }, cursor: "nwse-resize" },
+  { h: "w", pos: { left: -5, top: "50%", transform: "translateY(-50%)" }, cursor: "ew-resize" },
+];
+
+const ElementView = memo(function ElementView({
+  el,
+  scale,
+  selected,
+  editing,
+  textFlow,
+  cursor,
+  mode,
+  onDown,
+  onHandleDown,
+  onRadiusDown,
+  onEdit,
+  onText,
+  onEditEnd,
+}: Props) {
+  const isShape = el.type === "rect" || el.type === "ellipse";
+  const radius = borderRadiusCss(el, (mm) => `${mm * scale}px`);
+  const modeSudut = selected && mode === "sudut" && el.type === "rect";
+
+  const textStyle: React.CSSProperties = {
+    width: "100%",
+    height: "100%",
+    lineHeight: 1.3,
+    fontFamily: fontCss(el.fontFamily),
+    fontSize: (el.fontSize ?? 12) * PT_TO_MM * scale,
+    fontWeight: el.bold ? 700 : 400,
+    fontStyle: el.italic ? "italic" : "normal",
+    textDecoration: el.underline ? "underline" : "none",
+    textAlign: el.align ?? "left",
+    columnCount: Math.max(1, Math.min(6, Math.floor(el.columns ?? 1))),
+    columnFill: "auto",
+    columnGap: "1em",
+    color: el.color ?? "#1c1917",
+  };
+
+  return (
+    <div
+      onPointerDown={(e) => onDown(e, el)}
+      onDoubleClick={() => el.type === "text" && onEdit(el.id)}
+      style={{
+        position: "absolute",
+        left: el.x * scale,
+        top: el.y * scale,
+        width: el.w * scale,
+        height: el.h * scale,
+        cursor: editing ? "text" : cursor,
+        touchAction: "none",
+        outline: selected ? "1px solid #4f46e5" : "none",
+        background: isShape ? el.fill : undefined,
+        borderRadius: radius,
+      }}
+    >
+      {/* Gambar di dalam bentuk */}
+      {isShape && el.src && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            overflow: "hidden",
+            borderRadius: radius,
+            pointerEvents: "none",
+          }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={el.src}
+            alt=""
+            draggable={false}
+            decoding="async"
+            style={{
+              display: "block",
+              width: "100%",
+              height: "100%",
+              objectFit: el.fit ?? "cover",
+            }}
+          />
+        </div>
+      )}
+
+      {el.type === "text" &&
+        (editing ? (
+          <textarea
+            autoFocus
+            value={textFlow?.fullText ?? el.text ?? ""}
+            onChange={(e) => onText(textFlow?.sourceId ?? el.id, e.target.value)}
+            onBlur={onEditEnd}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === "Escape") onEditEnd();
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            style={{
+              ...textStyle,
+              columnCount: 1,
+              resize: "none",
+              border: "none",
+              outline: "none",
+              padding: 0,
+              margin: 0,
+              background: "#fff",
+              userSelect: "text",
+            }}
+          />
+        ) : (
+          <div
+            style={{
+              ...textStyle,
+              overflow: "hidden",
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+            }}
+          >
+            {textFlow?.text ?? el.text}
+          </div>
+        ))}
+
+      {el.type === "image" && el.src && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={el.src}
+          alt=""
+          draggable={false}
+          loading="lazy"
+          decoding="async"
+          style={{
+            display: "block",
+            width: "100%",
+            height: "100%",
+            objectFit: el.fit ?? "cover",
+            pointerEvents: "none",
+          }}
+        />
+      )}
+
+      {/* Titik ubah ukuran */}
+      {selected &&
+        !editing &&
+        !modeSudut &&
+        HANDLES.map((hd) => (
+          <div
+            key={hd.h}
+            onPointerDown={(e) => onHandleDown(e, el, hd.h)}
+            style={{
+              position: "absolute",
+              width: 10,
+              height: 10,
+              background: "#fff",
+              border: "1px solid #1c1917",
+              cursor: hd.cursor,
+              touchAction: "none",
+              ...hd.pos,
+            }}
+          />
+        ))}
+
+      {/* Titik atur sudut (mode sudut) */}
+      {selected && !editing && modeSudut && (
+        <div
+          title="Seret untuk mengatur sudut"
+          onPointerDown={(e) => onRadiusDown(e, el)}
+          style={{
+            position: "absolute",
+            left: (el.w - radiusOf(el)) * scale - 7,
+            top: -7,
+            width: 14,
+            height: 14,
+            borderRadius: "50%",
+            background: "#f97316",
+            border: "2px solid #fff",
+            boxShadow: "0 0 0 1px #1c1917",
+            cursor: "ew-resize",
+            touchAction: "none",
+          }}
+        />
+      )}
+    </div>
+  );
+});
+
+export default ElementView;
