@@ -13,6 +13,7 @@ const IKON: Record<DesignElement["type"], IconName> = {
   rect: "rect",
   ellipse: "ellipse",
   image: "image",
+  line: "line",
 };
 
 const NAMA: Record<DesignElement["type"], string> = {
@@ -20,6 +21,7 @@ const NAMA: Record<DesignElement["type"], string> = {
   rect: "Persegi",
   ellipse: "Elips",
   image: "Gambar",
+  line: "Garis",
 };
 
 export default function LayersPanel({ elements, selectedId, onSelect }: Props) {

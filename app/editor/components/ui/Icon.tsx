@@ -5,6 +5,7 @@ const PATHS = {
   text: ["M4 7V4h16v3", "M9 20h6", "M12 4v16"],
   rect: ["M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"],
   ellipse: ["M2 12a10 7 0 1 0 20 0a10 7 0 1 0-20 0z"],
+  line: ["M5 19 19 5"],
   image: [
     "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z",
     "M10.5 8.5a1.5 1.5 0 1 1-3 0a1.5 1.5 0 0 1 3 0z",
@@ -19,6 +20,11 @@ const PATHS = {
   alignCenter: ["M21 5H3", "M17 12H7", "M19 19H5"],
   alignRight: ["M21 5H3", "M21 12H9", "M21 19H7"],
   alignJustify: ["M21 5H3", "M21 12H3", "M21 19H3"],
+  alignCenterVertical: ["M12 2v20", "M4 7h16", "M7 12h10", "M5 17h14"],
+  alignCenterHorizontal: ["M2 12h20", "M7 4v16", "M12 7v10", "M17 5v14"],
+  alignTop: ["M3 4h18", "M7 7v13", "M12 7v9", "M17 7v13"],
+  alignBottom: ["M3 20h18", "M7 4v13", "M12 8v9", "M17 4v13"],
+  centerPage: ["M4 4h16v16H4z", "M12 7v10", "M7 12h10"],
   copy: [
     "M8 8h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2z",
     "M4 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2",

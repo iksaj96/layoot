@@ -18,6 +18,7 @@ import Icon, { IconButton } from "./ui/Icon";
 import { cloneElement, moveLayer, ubahElemen } from "./core/elementOps";
 import type { LayerOp } from "./core/elementOps";
 import { calculateTextFlow } from "./core/textFlow";
+import { shortcutTooltip } from "./core/shortcuts";
 import {
   LABEL_STATUS,
   MAX_SCALE,
@@ -28,6 +29,7 @@ import {
   uid,
 } from "./core/utils";
 import type { Mode, Status, Tool } from "./core/utils";
+import type { AlignAction } from "./core/utils";
 import { useGoogleFonts } from "./hooks/useGoogleFonts";
 import { useHistory } from "./hooks/useHistory";
 import { useShortcuts } from "./hooks/useShortcuts";
@@ -69,6 +71,7 @@ export default function Editor({ design }: { design: EditorDesign }) {
 
   const [active, setActive] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [tool, setTool] = useState<Tool>("pilih");
   const [mode, setMode] = useState<Mode>("ukuran");
@@ -94,6 +97,7 @@ export default function Editor({ design }: { design: EditorDesign }) {
   const hal = Math.min(active, pages.length - 1);
   const elements = pages[hal]?.elements ?? ELEMEN_KOSONG;
   const selected = elements.find((e) => e.id === selectedId) ?? null;
+  const selectedElements = elements.filter((el) => selectedIds.includes(el.id));
   const textFlow = useMemo(
     () => calculateTextFlow(elements, hydrated && fontsReady),
     [elements, fontsReady, hydrated]
@@ -185,11 +189,20 @@ export default function Editor({ design }: { design: EditorDesign }) {
 
   /* ---------- Operasi objek ---------- */
 
-  const pilih = useCallback((id: string | null) => {
-    setSelectedId(id);
+  const pilih = useCallback((id: string | null, additive = false) => {
+    if (additive && id) {
+      const next = selectedIds.includes(id)
+        ? selectedIds.filter((selected) => selected !== id)
+        : [...selectedIds, id];
+      setSelectedIds(next);
+      setSelectedId(next.at(-1) ?? null);
+    } else {
+      setSelectedIds(id ? [id] : []);
+      setSelectedId(id);
+    }
     setMode("ukuran");
     setPesan("");
-  }, []);
+  }, [selectedIds]);
 
   const updateElement = useCallback(
     (id: string, patch: Partial<DesignElement>) => {
@@ -209,6 +222,7 @@ export default function Editor({ design }: { design: EditorDesign }) {
       // kunci sama dengan drag-ukuran, supaya menggambar objek jadi satu langkah undo
       setPages((prev) => ubahElemen(prev, hal, (els) => [...els, el]), `${el.id}|h,w,x,y`);
       setSelectedId(el.id);
+      setSelectedIds([el.id]);
       setMode("ukuran");
     },
     [hal, setPages]
@@ -272,6 +286,7 @@ export default function Editor({ design }: { design: EditorDesign }) {
       })
     );
     setSelectedId(null);
+    setSelectedIds([]);
     setEditingId(null);
     setMode("ukuran");
   }
@@ -370,6 +385,55 @@ export default function Editor({ design }: { design: EditorDesign }) {
     setPages((prev) => ubahElemen(prev, hal, (els) => moveLayer(els, selectedId, op)));
   }
 
+  function alignSelected(action: AlignAction) {
+    const ids = new Set(selectedIds);
+    if (action !== "P" && ids.size < 2) return;
+    if (ids.size === 0) return;
+
+    setPages((prev) => {
+      const page = prev[hal];
+      if (!page) return prev;
+      const chosen = page.elements.filter((el) => ids.has(el.id));
+      if (chosen.length === 0 || (action !== "P" && chosen.length < 2)) return prev;
+
+      const left = Math.min(...chosen.map((el) => el.x));
+      const top = Math.min(...chosen.map((el) => el.y));
+      const right = Math.max(...chosen.map((el) => el.x + el.w));
+      const bottom = Math.max(...chosen.map((el) => el.y + el.h));
+      const delta = (el: DesignElement) => {
+        switch (action) {
+          case "C":
+            return { x: round((left + right - el.w) / 2 - el.x), y: 0 };
+          case "E":
+            return { x: 0, y: round((top + bottom - el.h) / 2 - el.y) };
+          case "L":
+            return { x: round(left - el.x), y: 0 };
+          case "R":
+            return { x: round(right - el.w - el.x), y: 0 };
+          case "T":
+            return { x: 0, y: round(top - el.y) };
+          case "B":
+            return { x: 0, y: round(bottom - el.h - el.y) };
+          case "P":
+            return {
+              x: round((size.w - (right - left)) / 2 - left),
+              y: round((size.h - (bottom - top)) / 2 - top),
+            };
+        }
+      };
+
+      return ubahElemen(prev, hal, (els) =>
+        els.map((el) => {
+          if (!ids.has(el.id)) return el;
+          const move = delta(el);
+          return move.x === 0 && move.y === 0
+            ? el
+            : { ...el, x: round(el.x + move.x), y: round(el.y + move.y) };
+        })
+      );
+    });
+  }
+
   function geser(dx: number, dy: number) {
     if (!selected) return;
     updateElement(selected.id, {
@@ -416,6 +480,7 @@ export default function Editor({ design }: { design: EditorDesign }) {
   function pilihHalaman(i: number) {
     setActive(i);
     setSelectedId(null);
+    setSelectedIds([]);
     setEditingId(null);
     setMode("ukuran");
   }
@@ -458,6 +523,7 @@ export default function Editor({ design }: { design: EditorDesign }) {
 
   const aksi: AksiPintasan = {
     tool: setTool,
+    align: alignSelected,
     undo,
     redo,
     copy: salin,
@@ -501,7 +567,7 @@ export default function Editor({ design }: { design: EditorDesign }) {
         />
         <IconButton icon="undo" label="Urungkan (Ctrl+Z)" disabled={!canUndo} onClick={undo} />
         <IconButton icon="redo" label="Ulangi (Ctrl+Y)" disabled={!canRedo} onClick={redo} />
-        <IconButton icon="help" label="Pintasan keyboard (?)" onClick={() => setHelpOpen(true)} />
+        <IconButton icon="help" label={shortcutTooltip("?")} onClick={() => setHelpOpen(true)} />
         <span
           className={`hidden shrink-0 text-xs font-semibold sm:inline ${
             status === "gagal" ? "text-red-700" : "text-stone-500"
@@ -514,6 +580,8 @@ export default function Editor({ design }: { design: EditorDesign }) {
 
       <PropertyBar
         selected={selected}
+        selectedElements={selectedElements}
+        onAlign={alignSelected}
         textBoxOptions={textBoxOptions}
         paper={design.paper}
         size={size}
@@ -539,6 +607,7 @@ export default function Editor({ design }: { design: EditorDesign }) {
           elements={elements}
           textFlow={textFlow}
           selectedId={selectedId}
+          selectedIds={selectedIds}
           editingId={editingId}
           tool={tool}
           mode={mode}

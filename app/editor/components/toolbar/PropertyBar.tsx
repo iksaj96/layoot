@@ -4,6 +4,8 @@ import type { DesignElement, Paper } from "@/lib/types";
 import { radiusOf } from "../core/elementOps";
 import type { LayerOp } from "../core/elementOps";
 import { MIN_SIZE } from "../core/utils";
+import type { AlignAction } from "../core/utils";
+import { shortcutTooltip } from "../core/shortcuts";
 import Icon, { IconButton } from "../ui/Icon";
 import NumberField from "../ui/NumberField";
 import ColorPicker from "./ColorPicker";
@@ -13,6 +15,8 @@ import type { UploadedImage } from "./ImageUpload";
 
 type Props = {
   selected: DesignElement | null;
+  selectedElements: DesignElement[];
+  onAlign: (action: AlignAction) => void;
   textBoxOptions: { id: string; label: string }[];
   paper: Paper;
   size: { w: number; h: number };
@@ -31,6 +35,8 @@ function Sekat() {
 
 export default function PropertyBar({
   selected,
+  selectedElements,
+  onAlign,
   textBoxOptions,
   paper,
   size,
@@ -42,9 +48,56 @@ export default function PropertyBar({
   onFillImage,
   onError,
 }: Props) {
+  const alignButtons: {
+    action: AlignAction;
+    icon:
+      | "alignCenterVertical"
+      | "alignCenterHorizontal"
+      | "alignLeft"
+      | "alignRight"
+      | "alignTop"
+      | "alignBottom"
+      | "centerPage";
+  }[] = [
+    { action: "C", icon: "alignCenterVertical" },
+    { action: "E", icon: "alignCenterHorizontal" },
+    { action: "L", icon: "alignLeft" },
+    { action: "R", icon: "alignRight" },
+    { action: "T", icon: "alignTop" },
+    { action: "B", icon: "alignBottom" },
+    { action: "P", icon: "centerPage" },
+  ];
+
   return (
     <div className="flex h-11 shrink-0 items-center gap-2 overflow-x-auto border-b border-stone-300 bg-stone-100 px-3">
-      {!selected ? (
+      {selectedElements.length > 0 && (
+        <>
+          <span className="shrink-0 text-xs font-semibold text-stone-600">Align</span>
+          {alignButtons.map(({ action, icon }) => (
+            <IconButton
+              key={action}
+              icon={icon}
+              label={shortcutTooltip(action)}
+              disabled={action !== "P" && selectedElements.length < 2}
+              onClick={() => onAlign(action)}
+            />
+          ))}
+          {selectedElements.length > 1 && (
+            <>
+              <Sekat />
+              <span className="shrink-0 text-xs text-stone-600">
+                {selectedElements.length} object terpilih
+              </span>
+            </>
+          )}
+          <Sekat />
+        </>
+      )}
+      {selectedElements.length > 1 ? (
+        <p className="shrink-0 text-xs text-stone-600">
+          Gunakan tombol Align atau shortcut C, E, L, R, T, B, P.
+        </p>
+      ) : !selected ? (
         <p className="shrink-0 text-xs text-stone-600">
           <span className="font-bold text-stone-800">
             Kertas {paper} · {size.w} × {size.h} mm
@@ -58,14 +111,18 @@ export default function PropertyBar({
           <NumberField
             label="L"
             value={selected.w}
-            min={MIN_SIZE}
-            onChange={(v) => onChange(selected.id, { w: Math.max(MIN_SIZE, v) })}
+            min={selected.type === "line" ? 0 : MIN_SIZE}
+            onChange={(v) =>
+              onChange(selected.id, { w: Math.max(selected.type === "line" ? 0 : MIN_SIZE, v) })
+            }
           />
           <NumberField
             label="T"
             value={selected.h}
-            min={MIN_SIZE}
-            onChange={(v) => onChange(selected.id, { h: Math.max(MIN_SIZE, v) })}
+            min={selected.type === "line" ? 0 : MIN_SIZE}
+            onChange={(v) =>
+              onChange(selected.id, { h: Math.max(selected.type === "line" ? 0 : MIN_SIZE, v) })
+            }
           />
           <span className="shrink-0 text-xs text-stone-500">mm</span>
 
@@ -164,6 +221,29 @@ export default function PropertyBar({
             </>
           )}
 
+          {selected.type === "line" && (
+            <>
+              <ColorPicker
+                label="Warna garis"
+                value={selected.stroke ?? "#1c1917"}
+                onChange={(c) => onChange(selected.id, { stroke: c })}
+              />
+              <NumberField
+                label="Ketebalan"
+                value={selected.strokeWidth ?? 0.5}
+                min={0.1}
+                max={10}
+                step={0.1}
+                width="w-14"
+                onChange={(v) =>
+                  onChange(selected.id, { strokeWidth: Math.max(0.1, Math.min(10, v)) })
+                }
+              />
+              <span className="shrink-0 text-xs text-stone-500">mm</span>
+              <Sekat />
+            </>
+          )}
+
           {/* ---------- Persegi dan elips ---------- */}
           {(selected.type === "rect" || selected.type === "ellipse") && (
             <>
@@ -173,6 +253,25 @@ export default function PropertyBar({
                 allowNone
                 onChange={(c) => onChange(selected.id, { fill: c })}
               />
+              <ColorPicker
+                label="Warna garis luar"
+                value={selected.stroke ?? "#1c1917"}
+                allowNone
+                allowNoneLabel="Tanpa garis luar"
+                onChange={(c) => onChange(selected.id, { stroke: c })}
+              />
+              <NumberField
+                label="Ketebalan"
+                value={selected.strokeWidth ?? 0.5}
+                min={0.1}
+                max={10}
+                step={0.1}
+                width="w-14"
+                onChange={(v) =>
+                  onChange(selected.id, { strokeWidth: Math.max(0.1, Math.min(10, v)) })
+                }
+              />
+              <span className="shrink-0 text-xs text-stone-500">mm</span>
 
               {selected.type === "rect" && (
                 <NumberField

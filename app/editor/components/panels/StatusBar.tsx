@@ -7,6 +7,7 @@ const NAMA_ALAT: Record<Tool, string> = {
   teks: "Alat Teks",
   persegi: "Alat Persegi",
   elips: "Alat Elips",
+  garis: "Alat Garis",
 };
 
 const NAMA_OBJEK: Record<DesignElement["type"], string> = {
@@ -14,6 +15,7 @@ const NAMA_OBJEK: Record<DesignElement["type"], string> = {
   rect: "Persegi",
   ellipse: "Elips",
   image: "Gambar",
+  line: "Garis",
 };
 
 type Props = {

@@ -10,6 +10,7 @@ type Props = {
   el: DesignElement;
   scale: number;
   selected: boolean;
+  showHandles: boolean;
   editing: boolean;
   textFlow?: TextFlowSegment;
   cursor: string;
@@ -37,6 +38,7 @@ const ElementView = memo(function ElementView({
   el,
   scale,
   selected,
+  showHandles,
   editing,
   textFlow,
   cursor,
@@ -51,6 +53,17 @@ const ElementView = memo(function ElementView({
   const isShape = el.type === "rect" || el.type === "ellipse";
   const radius = borderRadiusCss(el, (mm) => `${mm * scale}px`);
   const modeSudut = selected && mode === "sudut" && el.type === "rect";
+  const shapeStrokeWidth =
+    el.stroke === "transparent" ? 0 : (el.strokeWidth ?? 0.5) * scale;
+  const innerRadius = borderRadiusCss(
+    el,
+    (mm) => `${Math.max(0, mm * scale - shapeStrokeWidth)}px`
+  );
+  const lineWidth = (el.strokeWidth ?? 0.5) * scale;
+  const lineW = el.w * scale;
+  const lineH = el.h * scale;
+  const lineBoxW = Math.max(lineW, lineWidth, 8);
+  const lineBoxH = Math.max(lineH, lineWidth, 8);
 
   const textStyle: React.CSSProperties = {
     width: "100%",
@@ -74,25 +87,50 @@ const ElementView = memo(function ElementView({
       onDoubleClick={() => el.type === "text" && onEdit(el.id)}
       style={{
         position: "absolute",
-        left: el.x * scale,
-        top: el.y * scale,
-        width: el.w * scale,
-        height: el.h * scale,
+        left: el.x * scale - (el.type === "line" && el.w === 0 ? lineBoxW / 2 : 0),
+        top: el.y * scale - (el.type === "line" && el.h === 0 ? lineBoxH / 2 : 0),
+        width: el.type === "line" ? lineBoxW : el.w * scale,
+        height: el.type === "line" ? lineBoxH : el.h * scale,
+        pointerEvents: "auto",
         cursor: editing ? "text" : cursor,
         touchAction: "none",
         outline: selected ? "1px solid #4f46e5" : "none",
         background: isShape ? el.fill : undefined,
         borderRadius: radius,
+        boxSizing: isShape ? "border-box" : undefined,
+        border: isShape
+          ? `${shapeStrokeWidth}px solid ${el.stroke ?? "#1c1917"}`
+          : undefined,
       }}
     >
+      {el.type === "line" && (
+        <svg
+          width={lineBoxW}
+          height={lineBoxH}
+          viewBox={`0 0 ${lineBoxW} ${lineBoxH}`}
+          aria-label="Garis"
+          style={{ display: "block", overflow: "visible", pointerEvents: "none" }}
+        >
+          <line
+            x1={lineW === 0 ? lineBoxW / 2 : el.lineFlip ? lineW : 0}
+            y1={lineH === 0 ? lineBoxH / 2 : 0}
+            x2={lineW === 0 ? lineBoxW / 2 : el.lineFlip ? 0 : lineW}
+            y2={lineH === 0 ? lineBoxH / 2 : lineH}
+            stroke={el.stroke ?? "#1c1917"}
+            strokeWidth={lineWidth}
+            strokeLinecap="round"
+          />
+        </svg>
+      )}
+
       {/* Gambar di dalam bentuk */}
       {isShape && el.src && (
         <div
           style={{
             position: "absolute",
-            inset: 0,
+            inset: shapeStrokeWidth,
             overflow: "hidden",
-            borderRadius: radius,
+            borderRadius: innerRadius,
             pointerEvents: "none",
           }}
         >
@@ -169,6 +207,7 @@ const ElementView = memo(function ElementView({
 
       {/* Titik ubah ukuran */}
       {selected &&
+        showHandles &&
         !editing &&
         !modeSudut &&
         HANDLES.map((hd) => (
@@ -189,7 +228,7 @@ const ElementView = memo(function ElementView({
         ))}
 
       {/* Titik atur sudut (mode sudut) */}
-      {selected && !editing && modeSudut && (
+      {selected && showHandles && !editing && modeSudut && (
         <div
           title="Seret untuk mengatur sudut"
           onPointerDown={(e) => onRadiusDown(e, el)}

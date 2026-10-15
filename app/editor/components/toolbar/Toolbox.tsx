@@ -16,6 +16,7 @@ const ALAT: { id: Tool; icon: IconName; label: string }[] = [
   { id: "teks", icon: "text", label: "Teks (T)" },
   { id: "persegi", icon: "rect", label: "Persegi (R)" },
   { id: "elips", icon: "ellipse", label: "Elips (E)" },
+  { id: "garis", icon: "line", label: "Garis (L)" },
 ];
 
 export default function Toolbox({ tool, onTool, onImage, onError }: Props) {

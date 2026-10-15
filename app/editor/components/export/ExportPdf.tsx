@@ -24,6 +24,16 @@ function CetakElemen({
 }) {
   const isShape = el.type === "rect" || el.type === "ellipse";
   const radius = borderRadiusCss(el, (mm) => `${mm}mm`);
+  const shapeStrokeWidth = el.stroke === "transparent" ? 0 : el.strokeWidth ?? 0.5;
+  const innerRadius = borderRadiusCss(
+    el,
+    (mm) => `${Math.max(0, mm - shapeStrokeWidth)}mm`
+  );
+  const strokeWidth = el.strokeWidth ?? 0.5;
+  const lineW = el.w;
+  const lineH = el.h;
+  const lineBoxW = Math.max(lineW, strokeWidth);
+  const lineBoxH = Math.max(lineH, strokeWidth);
 
   return (
     <div
@@ -35,22 +45,59 @@ function CetakElemen({
         height: `${el.h}mm`,
         background: isShape ? el.fill : undefined,
         borderRadius: radius,
+        boxSizing: isShape ? "border-box" : undefined,
+        border: isShape
+          ? `${shapeStrokeWidth}mm solid ${el.stroke ?? "#1c1917"}`
+          : undefined,
         overflow: isShape && el.src ? "hidden" : undefined,
       }}
     >
-      {isShape && el.src && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={el.src}
-          alt=""
-          loading="eager"
+      {el.type === "line" && (
+        <svg
+          width={`${lineBoxW}mm`}
+          height={`${lineBoxH}mm`}
+          viewBox={`0 0 ${lineBoxW} ${lineBoxH}`}
           style={{
-            display: "block",
-            width: "100%",
-            height: "100%",
-            objectFit: el.fit ?? "cover",
+            position: "absolute",
+            left: lineW === 0 ? `${-lineBoxW / 2}mm` : 0,
+            top: lineH === 0 ? `${-lineBoxH / 2}mm` : 0,
+            overflow: "visible",
           }}
-        />
+        >
+          <line
+            x1={lineW === 0 ? lineBoxW / 2 : el.lineFlip ? lineW : 0}
+            y1={lineH === 0 ? lineBoxH / 2 : 0}
+            x2={lineW === 0 ? lineBoxW / 2 : el.lineFlip ? 0 : lineW}
+            y2={lineH === 0 ? lineBoxH / 2 : lineH}
+            stroke={el.stroke ?? "#1c1917"}
+            strokeWidth={strokeWidth}
+            strokeLinecap="round"
+          />
+        </svg>
+      )}
+
+      {isShape && el.src && (
+        <div
+          style={{
+            position: "absolute",
+            inset: `${shapeStrokeWidth}mm`,
+            overflow: "hidden",
+            borderRadius: innerRadius,
+          }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={el.src}
+            alt=""
+            loading="eager"
+            style={{
+              display: "block",
+              width: "100%",
+              height: "100%",
+              objectFit: el.fit ?? "cover",
+            }}
+          />
+        </div>
       )}
 
       {el.type === "text" && (

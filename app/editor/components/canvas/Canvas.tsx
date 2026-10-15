@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { DesignElement } from "@/lib/types";
 import type { TextFlowSegment } from "../core/textFlow";
 import ElementView from "./ElementView";
-import { MAX_SCALE, MIN_SCALE, MIN_SIZE, PAD, clamp, round, uid } from "../core/utils";
+import { MAX_SCALE, MIN_SCALE, MIN_SIZE, PX_PER_MM, clamp, round, uid } from "../core/utils";
 import type { Handle, Mode, Tool } from "../core/utils";
 
 type Props = {
@@ -13,10 +13,11 @@ type Props = {
   elements: DesignElement[];
   textFlow: Record<string, TextFlowSegment>;
   selectedId: string | null;
+  selectedIds: string[];
   editingId: string | null;
   tool: Tool;
   mode: Mode;
-  onSelect: (id: string | null) => void;
+  onSelect: (id: string | null, additive?: boolean) => void;
   onUpdate: (id: string, patch: Partial<DesignElement>) => void;
   onCreate: (el: DesignElement) => void;
   onToolDone: () => void;
@@ -25,14 +26,13 @@ type Props = {
   onScale: (s: number) => void;
 };
 
-type Jangkar = { mmX: number; mmY: number; cx: number; cy: number };
-
 export default function Canvas({
   size,
   scale,
   elements,
   textFlow,
   selectedId,
+  selectedIds,
   editingId,
   tool,
   mode,
@@ -45,110 +45,58 @@ export default function Canvas({
   onScale,
 }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
-  const pageRef = useRef<HTMLDivElement>(null);
+  const workspaceRef = useRef<HTMLDivElement>(null);
   const scaleRef = useRef(scale);
-  const jangkar = useRef<Jangkar | null>(null);
-  const pageW = size.w * scale;
-  const pageH = size.h * scale;
+  const panRef = useRef({ x: 0, y: 0 });
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const sudahNavigasi = useRef(false);
+  const sentuhan = useRef(new Map<number, { x: number; y: number }>());
+  const gestureAwal = useRef<{
+    distance: number;
+    midpoint: { x: number; y: number };
+    pan: { x: number; y: number };
+    scale: number;
+  } | null>(null);
+  const sentuhanTunggal = useRef<{
+    id: number;
+    x: number;
+    y: number;
+    started: boolean;
+  } | null>(null);
+  const pageW = size.w * PX_PER_MM;
+  const pageH = size.h * PX_PER_MM;
 
   useEffect(() => {
     scaleRef.current = scale;
   }, [scale]);
 
-  /* Setelah zoom, jaga titik di bawah kursor tetap di tempatnya */
+  const setPanPosition = useCallback((next: { x: number; y: number }) => {
+    panRef.current = next;
+    setPan(next);
+  }, []);
+
+  /* Letakkan halaman di tengah viewport saat editor pertama kali dibuka. */
   useLayoutEffect(() => {
-    const j = jangkar.current;
     const wrap = wrapRef.current;
-    const page = pageRef.current;
-    if (!j || !wrap || !page) return;
-    jangkar.current = null;
-    const r = page.getBoundingClientRect();
-    wrap.scrollLeft += r.left + j.mmX * scale - j.cx;
-    wrap.scrollTop += r.top + j.mmY * scale - j.cy;
-  }, [scale]);
+    if (!wrap || sudahNavigasi.current) return;
+    const frame = requestAnimationFrame(() => {
+      if (sudahNavigasi.current) return;
+      setPanPosition({
+        x: (wrap.clientWidth - size.w * scaleRef.current) / 2,
+        y: (wrap.clientHeight - size.h * scaleRef.current) / 2,
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [size.h, size.w, setPanPosition]);
 
-  /* Zoom dengan scroll, geser dengan klik roda tengah */
-  useEffect(() => {
-    const wrap = wrapRef.current;
-    if (!wrap) return;
-
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      const page = pageRef.current;
-      if (!page) return;
-      const s = scaleRef.current;
-      const delta = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
-      const next = clamp(
-        Math.round(s * Math.exp(-delta * 0.0015) * 1000) / 1000,
-        MIN_SCALE,
-        MAX_SCALE
-      );
-      if (next === s) return;
-      const r = page.getBoundingClientRect();
-      jangkar.current = {
-        mmX: (e.clientX - r.left) / s,
-        mmY: (e.clientY - r.top) / s,
-        cx: e.clientX,
-        cy: e.clientY,
-      };
-      onScale(next);
-    };
-
-    const onPointerDown = (e: PointerEvent) => {
-      if (e.button !== 1) return;
-      e.preventDefault();
-      e.stopPropagation();
-
-      const sx = e.clientX;
-      const sy = e.clientY;
-      const sl = wrap.scrollLeft;
-      const st = wrap.scrollTop;
-
-      const lapis = document.createElement("div");
-      lapis.style.cssText = "position:fixed;inset:0;z-index:60;cursor:grabbing";
-      document.body.appendChild(lapis);
-
-      const move = (ev: PointerEvent) => {
-        wrap.scrollLeft = sl - (ev.clientX - sx);
-        wrap.scrollTop = st - (ev.clientY - sy);
-      };
-      const up = () => {
-        lapis.remove();
-        window.removeEventListener("pointermove", move);
-        window.removeEventListener("pointerup", up);
-        window.removeEventListener("pointercancel", up);
-      };
-      window.addEventListener("pointermove", move);
-      window.addEventListener("pointerup", up);
-      window.addEventListener("pointercancel", up);
-    };
-
-    // Cegah mode autoscroll bawaan browser pada klik roda tengah
-    const cegahAutoscroll = (e: MouseEvent) => {
-      if (e.button === 1) e.preventDefault();
-    };
-
-    wrap.addEventListener("wheel", onWheel, { passive: false });
-    wrap.addEventListener("pointerdown", onPointerDown, true);
-    wrap.addEventListener("mousedown", cegahAutoscroll);
-    return () => {
-      wrap.removeEventListener("wheel", onWheel);
-      wrap.removeEventListener("pointerdown", onPointerDown, true);
-      wrap.removeEventListener("mousedown", cegahAutoscroll);
-    };
-  }, [onScale]);
-
-  /* Gambar objek baru dengan drag (atau klik untuk ukuran bawaan) */
-  const startDraw = useCallback(
-    (e: React.PointerEvent) => {
-      if (e.button !== 0) return;
-      const page = pageRef.current;
-      if (!page) return;
-      e.stopPropagation();
-
-      const rect = page.getBoundingClientRect();
-      const sx = round((e.clientX - rect.left) / scale);
-      const sy = round((e.clientY - rect.top) / scale);
+  const startDrawAt = useCallback(
+    (clientX: number, clientY: number, complete = false) => {
+      const wrap = wrapRef.current;
+      if (!wrap) return;
+      const bounds = wrap.getBoundingClientRect();
+      const drawScale = scaleRef.current;
+      const sx = round((clientX - bounds.left - panRef.current.x) / drawScale);
+      const sy = round((clientY - bounds.top - panRef.current.y) / drawScale);
       const id = uid();
 
       const baru: DesignElement =
@@ -167,18 +115,54 @@ export default function Canvas({
               color: "#1c1917",
             }
           : tool === "persegi"
-          ? { id, type: "rect", x: sx, y: sy, w: 60, h: 40, fill: "#4f46e5" }
-          : { id, type: "ellipse", x: sx, y: sy, w: 50, h: 50, fill: "#f59e0b" };
+            ? {
+                id,
+                type: "rect",
+                x: sx,
+                y: sy,
+                w: 60,
+                h: 40,
+                stroke: "#1c1917",
+                strokeWidth: 0.5,
+              }
+            : tool === "elips"
+            ? {
+                id,
+                type: "ellipse",
+                x: sx,
+                y: sy,
+                w: 50,
+                h: 50,
+                stroke: "#1c1917",
+                strokeWidth: 0.5,
+              }
+          : { id, type: "line", x: sx, y: sy, w: 20, h: 0, stroke: "#1c1917", strokeWidth: 0.5 };
 
       onCreate(baru);
-
+      if (complete) {
+        onToolDone();
+        if (baru.type === "text") onEdit(id);
+        return;
+      }
       let digeser = false;
 
       const onMove = (ev: PointerEvent) => {
-        const cx = (ev.clientX - rect.left) / scale;
-        const cy = (ev.clientY - rect.top) / scale;
+        const bounds = wrap.getBoundingClientRect();
+        const currentScale = scaleRef.current;
+        const cx = (ev.clientX - bounds.left - panRef.current.x) / currentScale;
+        const cy = (ev.clientY - bounds.top - panRef.current.y) / currentScale;
         if (!digeser && Math.hypot(cx - sx, cy - sy) < 3) return;
         digeser = true;
+        if (baru.type === "line") {
+          onUpdate(id, {
+            x: round(Math.min(sx, cx)),
+            y: round(Math.min(sy, cy)),
+            w: round(Math.abs(cx - sx)),
+            h: round(Math.abs(cy - sy)),
+            lineFlip: (cx - sx) * (cy - sy) < 0,
+          });
+          return;
+        }
         onUpdate(id, {
           x: round(Math.min(sx, cx)),
           y: round(Math.min(sy, cy)),
@@ -199,7 +183,167 @@ export default function Canvas({
       window.addEventListener("pointerup", onUp);
       window.addEventListener("pointercancel", onUp);
     },
-    [tool, scale, onCreate, onUpdate, onToolDone, onEdit]
+    [tool, onCreate, onUpdate, onToolDone, onEdit]
+  );
+
+  /* Wheel zooms around the cursor; middle-button dragging pans the pasteboard. */
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const multiplier = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? wrap.clientHeight : 1;
+      const currentScale = scaleRef.current;
+      const bounds = wrap.getBoundingClientRect();
+      const cursorX = e.clientX - bounds.left;
+      const cursorY = e.clientY - bounds.top;
+      const nextScale = clamp(
+        Math.round(currentScale * Math.exp(-e.deltaY * multiplier * 0.0015) * 1000) / 1000,
+        MIN_SCALE,
+        MAX_SCALE
+      );
+      if (nextScale === currentScale) return;
+      const ratio = nextScale / currentScale;
+      setPanPosition({
+        x: cursorX - (cursorX - panRef.current.x) * ratio,
+        y: cursorY - (cursorY - panRef.current.y) * ratio,
+      });
+      onScale(nextScale);
+    };
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.pointerType === "touch") {
+        if (e.target !== wrap && e.target !== workspaceRef.current) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        sentuhan.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (sentuhan.current.size === 1) {
+          sentuhanTunggal.current = {
+            id: e.pointerId,
+            x: e.clientX,
+            y: e.clientY,
+            started: false,
+          };
+        } else if (sentuhan.current.size === 2) {
+          const [a, b] = [...sentuhan.current.values()];
+          const bounds = wrap.getBoundingClientRect();
+          const midpoint = {
+            x: (a.x + b.x) / 2 - bounds.left,
+            y: (a.y + b.y) / 2 - bounds.top,
+          };
+          gestureAwal.current = {
+            distance: Math.hypot(a.x - b.x, a.y - b.y),
+            midpoint,
+            pan: panRef.current,
+            scale: scaleRef.current,
+          };
+          sentuhanTunggal.current = null;
+        }
+        return;
+      }
+
+      if (e.button !== 1) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+
+      const sx = e.clientX;
+      const sy = e.clientY;
+      const awal = panRef.current;
+      sudahNavigasi.current = true;
+      wrap.style.cursor = "grabbing";
+
+      const move = (ev: PointerEvent) => {
+        setPanPosition({ x: awal.x + ev.clientX - sx, y: awal.y + ev.clientY - sy });
+      };
+      const up = () => {
+        wrap.style.cursor = "";
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        window.removeEventListener("pointercancel", up);
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+      window.addEventListener("pointercancel", up);
+    };
+    const preventMiddleAutoScroll = (e: MouseEvent) => {
+      if (e.button === 1) e.preventDefault();
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (!sentuhan.current.has(e.pointerId)) return;
+      e.preventDefault();
+      sentuhan.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      const points = [...sentuhan.current.values()];
+      const start = sentuhanTunggal.current;
+      if (points.length === 1 && start && !start.started &&
+          Math.hypot(e.clientX - start.x, e.clientY - start.y) >= 5 &&
+          tool !== "pilih") {
+        start.started = true;
+        sudahNavigasi.current = true;
+        startDrawAt(start.x, start.y);
+      }
+      if (points.length < 2) return;
+      const gesture = gestureAwal.current;
+      if (!gesture) return;
+      const [a, b] = points;
+      const bounds = wrap.getBoundingClientRect();
+      const midpoint = {
+        x: (a.x + b.x) / 2 - bounds.left,
+        y: (a.y + b.y) / 2 - bounds.top,
+      };
+      const distance = Math.hypot(a.x - b.x, a.y - b.y);
+      const nextScale = clamp(
+        Math.round(gesture.scale * distance / Math.max(gesture.distance, 1) * 1000) / 1000,
+        MIN_SCALE,
+        MAX_SCALE
+      );
+      const anchorX = (gesture.midpoint.x - gesture.pan.x) / gesture.scale;
+      const anchorY = (gesture.midpoint.y - gesture.pan.y) / gesture.scale;
+      setPanPosition({
+        x: midpoint.x - anchorX * nextScale,
+        y: midpoint.y - anchorY * nextScale,
+      });
+      onScale(nextScale);
+      sudahNavigasi.current = true;
+    };
+
+    const onPointerUp = (e: PointerEvent) => {
+      if (!sentuhan.current.has(e.pointerId)) return;
+      sentuhan.current.delete(e.pointerId);
+      if (sentuhan.current.size < 2) gestureAwal.current = null;
+      const start = sentuhanTunggal.current;
+      if (start?.id === e.pointerId && !start.started && !gestureAwal.current) {
+        if (tool === "pilih") onSelect(null);
+        else startDrawAt(start.x, start.y, true);
+      }
+      if (sentuhan.current.size === 0) sentuhanTunggal.current = null;
+    };
+
+    wrap.addEventListener("wheel", onWheel, { passive: false });
+    wrap.addEventListener("pointerdown", onPointerDown, true);
+    wrap.addEventListener("mousedown", preventMiddleAutoScroll);
+    window.addEventListener("pointermove", onPointerMove, { passive: false });
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
+    return () => {
+      wrap.removeEventListener("wheel", onWheel);
+      wrap.removeEventListener("pointerdown", onPointerDown, true);
+      wrap.removeEventListener("mousedown", preventMiddleAutoScroll);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
+    };
+  }, [onScale, onSelect, setPanPosition, startDrawAt, tool]);
+
+  /* Gambar objek baru dengan drag (atau klik untuk ukuran bawaan) */
+  const startDraw = useCallback(
+    (e: React.PointerEvent) => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      startDrawAt(e.clientX, e.clientY);
+    },
+    [startDrawAt]
   );
 
   /* Geser dan ubah ukuran objek. Klik (tanpa geser) pada persegi yang sudah
@@ -209,8 +353,12 @@ export default function Canvas({
       if (e.button !== 0) return;
       e.stopPropagation();
 
-      const sudahDipilih = selectedId === el.id;
-      if (!sudahDipilih) onSelect(el.id);
+      const sudahDipilih = selectedIds.includes(el.id);
+      const shiftSelect = aksi === "move" && e.shiftKey;
+      if (shiftSelect) onSelect(el.id, true);
+      else if (!sudahDipilih || (aksi === "move" && selectedIds.length > 1)) {
+        onSelect(el.id);
+      }
 
       const sx = e.clientX;
       const sy = e.clientY;
@@ -231,7 +379,7 @@ export default function Canvas({
 
         let { x, y, w, h } = o;
         const sudut = aksi === "nw" || aksi === "ne" || aksi === "sw" || aksi === "se";
-        if (sudut && ev.shiftKey) {
+        if (sudut && ev.shiftKey && el.type !== "line") {
           const perubahanLebar = (aksi.includes("e") ? dx : -dx) / o.w;
           const perubahanTinggi = (aksi.includes("s") ? dy : -dy) / o.h;
           const perubahan = Math.abs(perubahanLebar) >= Math.abs(perubahanTinggi)
@@ -245,14 +393,15 @@ export default function Canvas({
           if (aksi.includes("w")) x = o.x + o.w - w;
           if (aksi.includes("n")) y = o.y + o.h - h;
         } else {
-          if (aksi.includes("e")) w = Math.max(MIN_SIZE, o.w + dx);
+          const minDimensi = el.type === "line" ? 0 : MIN_SIZE;
+          if (aksi.includes("e")) w = Math.max(minDimensi, o.w + dx);
           if (aksi.includes("w")) {
-            w = Math.max(MIN_SIZE, o.w - dx);
+            w = Math.max(minDimensi, o.w - dx);
             x = o.x + o.w - w;
           }
-          if (aksi.includes("s")) h = Math.max(MIN_SIZE, o.h + dy);
+          if (aksi.includes("s")) h = Math.max(minDimensi, o.h + dy);
           if (aksi.includes("n")) {
-            h = Math.max(MIN_SIZE, o.h - dy);
+            h = Math.max(minDimensi, o.h - dy);
             y = o.y + o.h - h;
           }
         }
@@ -263,7 +412,7 @@ export default function Canvas({
         window.removeEventListener("pointermove", onMove);
         window.removeEventListener("pointerup", onUp);
         window.removeEventListener("pointercancel", onUp);
-        if (!bergerak && aksi === "move" && sudahDipilih && el.type === "rect") {
+        if (!bergerak && !shiftSelect && aksi === "move" && sudahDipilih && el.type === "rect") {
           onToggleMode();
         }
       };
@@ -272,7 +421,7 @@ export default function Canvas({
       window.addEventListener("pointerup", onUp);
       window.addEventListener("pointercancel", onUp);
     },
-    [scale, selectedId, onSelect, onUpdate, onToggleMode]
+    [scale, selectedIds, onSelect, onUpdate, onToggleMode]
   );
 
   /* Atur kelengkungan sudut persegi */
@@ -326,7 +475,7 @@ export default function Canvas({
 
   const onEditEnd = useCallback(() => onEdit(null), [onEdit]);
 
-  function onPagePointerDown(e: React.PointerEvent) {
+  function onWorkspacePointerDown(e: React.PointerEvent) {
     if (e.target !== e.currentTarget || e.button !== 0) return;
     if (tool === "pilih") {
       onSelect(null);
@@ -338,53 +487,68 @@ export default function Canvas({
   return (
     <div
       ref={wrapRef}
-      className="min-h-0 min-w-0 flex-1 overflow-auto bg-stone-300"
+      onPointerDown={onWorkspacePointerDown}
+      className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-stone-300"
+      style={{ touchAction: "none", cursor: tool === "pilih" ? "default" : "crosshair" }}
     >
-      {/* Ruang kerja: kertas selalu di tengah bila muat, bisa digulir bila besar */}
+      {/* Pasteboard tidak memiliki batas scroll; hanya transform workspace yang berubah. */}
       <div
-        onPointerDown={(e) => {
-          if (e.target === e.currentTarget && e.button === 0 && tool === "pilih") {
-            onSelect(null);
-          }
-        }}
+        ref={workspaceRef}
+        onPointerDown={onWorkspacePointerDown}
         style={{
-          display: "flex",
-          width: "max-content",
-          minWidth: "100%",
-          minHeight: "100%",
-          padding: PAD,
+          position: "absolute",
+          left: 0,
+          top: 0,
+          width: pageW,
+          height: pageH,
+          overflow: "visible",
+          transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale / PX_PER_MM})`,
+          transformOrigin: "0 0",
         }}
       >
         <div
-          ref={pageRef}
-          onPointerDown={onPagePointerDown}
           className="bg-white"
+          aria-label="Drawing page"
           style={{
-            position: "relative",
-            flexShrink: 0,
-            margin: "auto",
+            position: "absolute",
+            left: 0,
+            top: 0,
             width: pageW,
             height: pageH,
-            outline: "1px solid #78716c",
-            cursor: tool === "pilih" ? "default" : "crosshair",
-            touchAction: tool === "pilih" ? "auto" : "none",
+            boxSizing: "border-box",
+            border: "1px solid #a8a29e",
+            boxShadow: "4px 4px 0 #bdbdbd",
+            pointerEvents: "none",
           }}
         >
           {/* Garis margin 10 mm */}
           <div
             style={{
               position: "absolute",
-              inset: 10 * scale,
+              inset: 10 * PX_PER_MM,
               border: "1px dashed #d6d3d1",
               pointerEvents: "none",
             }}
           />
+        </div>
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
+            width: pageW,
+            height: pageH,
+            overflow: "visible",
+            pointerEvents: "none",
+          }}
+        >
           {elements.map((el) => (
             <ElementView
               key={el.id}
               el={el}
-              scale={scale}
-              selected={el.id === selectedId}
+              scale={PX_PER_MM}
+              selected={selectedIds.includes(el.id)}
+              showHandles={el.id === selectedId}
               editing={el.id === editingId}
               textFlow={textFlow[el.id]}
               cursor={tool === "pilih" ? "move" : "crosshair"}

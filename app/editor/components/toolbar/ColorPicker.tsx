@@ -11,6 +11,7 @@ type Props = {
   value?: string; // hex, "transparent", atau kosong
   onChange: (warna: string) => void;
   allowNone?: boolean; // tampilkan tombol "Tanpa isi"
+  allowNoneLabel?: string; // tampilkan tombol "Tanpa isi"
 };
 
 const CATUR =
@@ -46,7 +47,13 @@ function seret(
   el.addEventListener("pointercancel", selesai);
 }
 
-export default function ColorPicker({ label, value, onChange, allowNone }: Props) {
+export default function ColorPicker({
+  label,
+  value,
+  onChange,
+  allowNone,
+  allowNoneLabel = "Tanpa isi (transparan)",
+}: Props) {
   const tombol = useRef<HTMLButtonElement>(null);
   const kotak = useRef<HTMLDivElement>(null);
   const [buka, setBuka] = useState(false);
@@ -239,7 +246,7 @@ export default function ColorPicker({ label, value, onChange, allowNone }: Props
                 onClick={() => onChange("transparent")}
                 className="mt-3 w-full rounded border border-stone-300 py-1 text-xs font-semibold text-stone-700 hover:bg-stone-100"
               >
-                Tanpa isi (transparan)
+                {allowNoneLabel}
               </button>
             )}
           </div>,

@@ -1,127 +1,98 @@
 "use client";
 
-import { useEffect } from "react";
-
-const GRUP: { judul: string; isi: [string, string][] }[] = [
-  {
-    judul: "Umum",
-    isi: [
-      ["Ctrl + S", "Simpan sekarang"],
-      ["Ctrl + Z", "Urungkan"],
-      ["Ctrl + Shift + Z / Ctrl + Y", "Ulangi"],
-      ["? atau F1", "Buka/tutup bantuan ini"],
-    ],
-  },
-  {
-    judul: "Alat",
-    isi: [
-      ["V", "Alat pilih"],
-      ["T", "Alat teks"],
-      ["R", "Alat persegi"],
-      ["E", "Alat elips"],
-      ["Esc", "Batal / kembali ke alat pilih"],
-    ],
-  },
-  {
-    judul: "Objek",
-    isi: [
-      ["Ctrl + C / X / V", "Salin / potong / tempel"],
-      ["Ctrl + D", "Duplikat"],
-      ["Delete / Backspace", "Hapus"],
-      ["Tab / Shift + Tab", "Pilih objek berikutnya / sebelumnya"],
-      ["Enter", "Edit teks terpilih"],
-      ["Panah", "Geser 1 mm (Shift: 10 mm)"],
-      ["Klik persegi terpilih", "Ganti mode ukuran ↔ sudut"],
-    ],
-  },
-  {
-    judul: "Lapisan",
-    isi: [
-      ["Ctrl + ]", "Naik satu lapisan"],
-      ["Ctrl + [", "Turun satu lapisan"],
-      ["Shift + PageUp", "Ke paling atas"],
-      ["Shift + PageDown", "Ke paling bawah"],
-      ["Alt + PageUp / PageDown", "Naik / turun satu lapisan"],
-    ],
-  },
-  {
-    judul: "Teks",
-    isi: [
-      ["Ctrl + B", "Tebal"],
-      ["Ctrl + I", "Miring"],
-      ["Ctrl + U", "Garis bawah"],
-    ],
-  },
-  {
-    judul: "Tampilan",
-    isi: [
-      ["Scroll", "Zoom ke arah kursor"],
-      ["Klik roda tengah + geser", "Geser tampilan"],
-      ["Ctrl + = / Ctrl + -", "Perbesar / perkecil"],
-      ["Ctrl + 0", "Muat ke layar"],
-    ],
-  },
-];
+import { useEffect, useMemo, useState } from "react";
+import { SHORTCUTS } from "../core/shortcuts";
 
 export default function ShortcutHelp({ onClose }: { onClose: () => void }) {
+  const [query, setQuery] = useState("");
+
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if (e.key === "Escape" || e.key === "?" || e.key === "F1") {
-        e.preventDefault();
-        onClose();
-      }
+      if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
   }, [onClose]);
 
+  const groups = useMemo(() => {
+    const term = query.trim().toLocaleLowerCase();
+    const filtered = SHORTCUTS.filter((shortcut) =>
+      `${shortcut.key} ${shortcut.label} ${shortcut.description} ${shortcut.category}`
+        .toLocaleLowerCase()
+        .includes(term)
+    );
+    const categories = [...new Set(SHORTCUTS.map((shortcut) => shortcut.category))];
+    return categories
+      .map((category) => ({
+        category,
+        shortcuts: filtered.filter((shortcut) => shortcut.category === category),
+      }))
+      .filter((group) => group.shortcuts.length > 0);
+  }, [query]);
+
   return (
     <div
-      className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-3 sm:p-4"
       onPointerDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       <div
         role="dialog"
-        aria-label="Pintasan keyboard"
-        className="max-h-[85vh] w-full max-w-2xl overflow-auto rounded-lg bg-white p-4 shadow-xl"
+        aria-modal="true"
+        aria-label="Pintasan Keyboard"
+        className="max-h-[90vh] w-full max-w-3xl overflow-auto rounded-lg bg-white p-4 text-stone-900 shadow-xl dark:bg-stone-900 dark:text-stone-100 sm:p-5"
       >
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-bold text-stone-900">Pintasan keyboard</h2>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="text-base font-bold">Pintasan Keyboard</h2>
           <button
             onClick={onClose}
-            className="rounded px-2 py-1 text-xs font-semibold text-stone-700 hover:bg-stone-200"
+            className="rounded px-2 py-1 text-sm font-semibold text-stone-700 hover:bg-stone-200 dark:text-stone-200 dark:hover:bg-stone-700"
           >
             Tutup
           </button>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          {GRUP.map((g) => (
-            <section key={g.judul}>
-              <h3 className="mb-1 text-xs font-bold uppercase text-stone-500">
-                {g.judul}
-              </h3>
-              <ul className="space-y-1">
-                {g.isi.map(([tombol, arti]) => (
-                  <li key={tombol} className="flex items-baseline justify-between gap-3 text-xs">
-                    <span className="text-stone-700">{arti}</span>
-                    <kbd className="shrink-0 rounded border border-stone-300 bg-stone-100 px-1.5 py-0.5 font-mono text-[11px] text-stone-800">
-                      {tombol}
-                    </kbd>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
-        </div>
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Cari tombol atau fungsi..."
+          aria-label="Cari shortcut"
+          className="mb-4 w-full rounded border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 placeholder:text-stone-500 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100"
+        />
 
-        <p className="mt-4 text-xs text-stone-500">
-          Ctrl + PageUp/PageDown dipakai Chrome untuk pindah tab dan tidak bisa
-          diambil alih situs, jadi gunakan Ctrl + ] dan Ctrl + [ untuk naik/turun
-          satu lapisan.
-        </p>
+        {groups.length === 0 ? (
+          <p className="py-6 text-center text-sm text-stone-500">Shortcut tidak ditemukan.</p>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2">
+            {groups.map(({ category, shortcuts }) => (
+              <section key={category}>
+                <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-stone-500 dark:text-stone-400">
+                  {category}
+                </h3>
+                <ul className="space-y-2">
+                  {shortcuts.map((shortcut, index) => (
+                    <li
+                      key={`${category}-${shortcut.key}-${shortcut.label}-${index}`}
+                      className="grid grid-cols-[minmax(6rem,max-content)_minmax(0,1fr)] items-start gap-x-3 gap-y-0.5 text-xs"
+                    >
+                      <kbd className="w-fit max-w-full whitespace-normal rounded border border-stone-300 bg-stone-100 px-1.5 py-1 font-mono text-[11px] text-stone-800 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100">
+                        {shortcut.key}
+                      </kbd>
+                      <span className="font-semibold text-stone-800 dark:text-stone-100">
+                        {shortcut.label}
+                      </span>
+                      <span className="col-start-2 text-stone-600 dark:text-stone-300">
+                        {shortcut.description}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

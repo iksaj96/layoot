@@ -5,7 +5,7 @@ export const PAPER_SIZE_MM: Record<Paper, { w: number; h: number }> = {
   F4: { w: 215, h: 330 },
 };
 
-export type ElementType = "text" | "rect" | "ellipse" | "image";
+export type ElementType = "text" | "rect" | "ellipse" | "image" | "line";
 
 export type DesignElement = {
   id: string;
@@ -25,6 +25,9 @@ export type DesignElement = {
   nextTextBoxId?: string;
   color?: string;
   fill?: string;
+  stroke?: string;
+  strokeWidth?: number; // mm
+  lineFlip?: boolean;
   radius?: number; // mm, kelengkungan sudut persegi
   src?: string; // gambar (type "image") atau gambar isi di dalam rect/ellipse
   fit?: "cover" | "contain";

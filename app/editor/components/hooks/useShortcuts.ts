@@ -2,10 +2,12 @@
 
 import { useEffect, useRef } from "react";
 import type { LayerOp } from "../core/elementOps";
-import type { Tool } from "../core/utils";
+import type { AlignAction, Tool } from "../core/utils";
+import { SHORTCUTS } from "../core/shortcuts";
 
 export type AksiPintasan = {
   tool: (t: Tool) => void;
+  align: (action: AlignAction) => void;
   undo: () => void;
   redo: () => void;
   copy: () => void;
@@ -82,6 +84,17 @@ export function useShortcuts(aksi: AksiPintasan, aktif = true) {
         return;
       }
 
+      if (!e.shiftKey) {
+        const shortcut = SHORTCUTS.find(
+          (item) => item.category === "Align" && item.key.toLowerCase() === k
+        );
+        if (shortcut?.action) {
+          const action = shortcut.action;
+          return jalankan(() => a.align(action));
+        }
+      }
+
+      if (e.key === "?" && e.shiftKey) return jalankan(a.help);
       if (e.shiftKey && e.code === "PageUp") return jalankan(() => a.layer("atas"));
       if (e.shiftKey && e.code === "PageDown") return jalankan(() => a.layer("bawah"));
 
@@ -99,7 +112,6 @@ export function useShortcuts(aksi: AksiPintasan, aktif = true) {
           if (diTombol) return;
           return jalankan(() => a.cycle(e.shiftKey ? -1 : 1));
         case "F1":
-        case "?":
           return jalankan(a.help);
         case "ArrowLeft":
           return jalankan(() => a.nudge(-langkah, 0));
@@ -111,11 +123,14 @@ export function useShortcuts(aksi: AksiPintasan, aktif = true) {
           return jalankan(() => a.nudge(0, langkah));
       }
 
-      if (e.shiftKey) return;
+      if (e.shiftKey) {
+        if (k === "t") a.tool("teks");
+        else if (k === "r") a.tool("persegi");
+        else if (k === "e") a.tool("elips");
+        else if (k === "l") a.tool("garis");
+        return;
+      }
       if (k === "v") a.tool("pilih");
-      else if (k === "t") a.tool("teks");
-      else if (k === "r") a.tool("persegi");
-      else if (k === "e") a.tool("elips");
     }
 
     window.addEventListener("keydown", onKey);

@@ -2,10 +2,11 @@ export const PT_TO_MM = 0.3528;
 export const PX_PER_MM = 3.7795; // 1 mm = 3,78 px pada zoom 100%
 export const MIN_SIZE = 5;
 export const PAD = 60; // px, ruang kerja di sekeliling kertas
-export const MIN_SCALE = 0.3;
+export const MIN_SCALE = 0.1;
 export const MAX_SCALE = 8;
 
-export type Tool = "pilih" | "teks" | "persegi" | "elips";
+export type Tool = "pilih" | "teks" | "persegi" | "elips" | "garis";
+export type AlignAction = "C" | "E" | "L" | "R" | "T" | "B" | "P";
 export type Handle = "nw" | "n" | "ne" | "w" | "e" | "sw" | "s" | "se";
 export type Mode = "ukuran" | "sudut";
 export type Status = "tersimpan" | "menyimpan" | "belum" | "gagal";
