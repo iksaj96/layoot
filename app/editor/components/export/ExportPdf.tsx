@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { DEFAULT_FONT_SIZE } from "@/lib/types";
 import type { DesignElement, DesignPage } from "@/lib/types";
 import { borderRadiusCss } from "../core/elementOps";
 import { fontCss } from "../core/fonts";
@@ -126,7 +127,7 @@ function CetakElemen({
             wordBreak: "break-word",
             lineHeight: 1.3,
             fontFamily: fontCss(el.fontFamily),
-            fontSize: `${el.fontSize ?? 12}pt`,
+            fontSize: `${el.fontSize ?? DEFAULT_FONT_SIZE}pt`,
             fontWeight: el.bold ? 700 : 400,
             fontStyle: el.italic ? "italic" : "normal",
             textDecoration: el.underline ? "underline" : "none",
@@ -202,10 +203,11 @@ export default function ExportPdf({ title, pages, size }: Props) {
         onClick={() => setPrinting(true)}
         disabled={printing}
         title="Ekspor PDF"
-        className="flex h-8 shrink-0 items-center gap-1.5 rounded bg-indigo-600 px-3 text-sm font-semibold text-white disabled:opacity-60"
+        aria-label={printing ? "Menyiapkan ekspor PDF" : "Ekspor PDF"}
+        className="flex h-8 min-w-8 shrink-0 items-center gap-1.5 rounded-lg bg-indigo-600 px-1.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60 sm:px-3"
       >
-        <Icon name="download" size={16} />
-        <span className="hidden sm:inline">
+        <Icon name="download" size={18} />
+        <span className="hidden md:inline">
           {printing ? "Menyiapkan..." : "Ekspor PDF"}
         </span>
       </button>

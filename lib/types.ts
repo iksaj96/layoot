@@ -1,5 +1,12 @@
 export type Paper = "A4" | "F4";
 
+export const DEFAULT_FONT_SIZE = 12;
+
+export const PAPER_OPTIONS: readonly { value: Paper; label: string }[] = [
+  { value: "A4", label: "A4 (210 × 297 mm)" },
+  { value: "F4", label: "F4 (215 × 330 mm)" },
+];
+
 export const PAPER_SIZE_MM: Record<Paper, { w: number; h: number }> = {
   A4: { w: 210, h: 297 },
   F4: { w: 215, h: 330 },

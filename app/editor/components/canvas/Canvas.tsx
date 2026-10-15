@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { DEFAULT_FONT_SIZE } from "@/lib/types";
 import type { DesignElement } from "@/lib/types";
 import type { TextFlowSegment } from "../core/textFlow";
 import ElementView from "./ElementView";
@@ -74,8 +75,8 @@ export default function Canvas({
     if (!wrap) return { x: 0, y: 0 };
     const bounds = wrap.getBoundingClientRect();
     return {
-      x: (clientX - bounds.left - panRef.current.x) / scaleRef.current / PX_PER_MM,
-      y: (clientY - bounds.top - panRef.current.y) / scaleRef.current / PX_PER_MM,
+      x: (clientX - bounds.left - panRef.current.x) / scaleRef.current,
+      y: (clientY - bounds.top - panRef.current.y) / scaleRef.current,
     };
   }, []);
 
@@ -83,25 +84,41 @@ export default function Canvas({
     (e: React.PointerEvent, el: DesignElement) => {
       if (e.button !== 0) return;
       e.stopPropagation();
+      e.preventDefault();
+      e.currentTarget.setPointerCapture(e.pointerId);
       onSelect(el.id);
       const start = titikHalaman(e.clientX, e.clientY);
       setCropPreview({ x: start.x, y: start.y, w: 0, h: 0 });
       let current = start;
+      let previewFrame = 0;
+      let previewTerbaru = { x: start.x, y: start.y, w: 0, h: 0 };
 
       const onMove = (event: PointerEvent) => {
+        if (event.pointerId !== e.pointerId) return;
         current = titikHalaman(event.clientX, event.clientY);
-        setCropPreview({
+        previewTerbaru = {
           x: Math.min(start.x, current.x),
           y: Math.min(start.y, current.y),
           w: Math.abs(current.x - start.x),
           h: Math.abs(current.y - start.y),
-        });
+        };
+        if (!previewFrame) {
+          previewFrame = requestAnimationFrame(() => {
+            setCropPreview(previewTerbaru);
+            previewFrame = 0;
+          });
+        }
       };
-      const onUp = () => {
+      function bersihkan() {
         window.removeEventListener("pointermove", onMove);
         window.removeEventListener("pointerup", onUp);
-        window.removeEventListener("pointercancel", onUp);
+        window.removeEventListener("pointercancel", onCancel);
+        cancelAnimationFrame(previewFrame);
         setCropPreview(null);
+      }
+      function onUp(event: PointerEvent) {
+        if (event.pointerId !== e.pointerId) return;
+        bersihkan();
 
         const dragged = {
           left: Math.min(start.x, current.x),
@@ -190,11 +207,15 @@ export default function Canvas({
             h: height * crop.h,
           },
         });
-      };
+      }
+      function onCancel(event: PointerEvent) {
+        if (event.pointerId !== e.pointerId) return;
+        bersihkan();
+      }
 
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
-      window.addEventListener("pointercancel", onUp);
+      window.addEventListener("pointercancel", onCancel);
     },
     [onSelect, onUpdate, titikHalaman]
   );
@@ -242,7 +263,7 @@ export default function Canvas({
               w: 70,
               h: 14,
               text: "Teks",
-              fontSize: 24,
+              fontSize: DEFAULT_FONT_SIZE,
               bold: false,
               align: "left",
               color: "#1c1917",
@@ -487,24 +508,35 @@ export default function Canvas({
 
       const sudahDipilih = selectedIds.includes(el.id);
       const shiftSelect = aksi === "move" && e.shiftKey;
-      if (shiftSelect) onSelect(el.id, true);
-      else if (!sudahDipilih || (aksi === "move" && selectedIds.length > 1)) {
+      if (!shiftSelect && (!sudahDipilih || (aksi === "move" && selectedIds.length > 1))) {
         onSelect(el.id);
       }
 
+      e.currentTarget.setPointerCapture(e.pointerId);
       const sx = e.clientX;
       const sy = e.clientY;
       const o = { x: el.x, y: el.y, w: el.w, h: el.h };
       let bergerak = false;
+      let arahTerkunci: "x" | "y" | null = null;
 
       const onMove = (ev: PointerEvent) => {
+        if (ev.pointerId !== e.pointerId) return;
         if (!bergerak && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 3) return;
         bergerak = true;
 
-        const dx = (ev.clientX - sx) / scale;
-        const dy = (ev.clientY - sy) / scale;
+        if (shiftSelect && !sudahDipilih) onSelect(el.id, true);
+        let dx = (ev.clientX - sx) / scale;
+        let dy = (ev.clientY - sy) / scale;
 
         if (aksi === "move") {
+          const dikunci = ev.shiftKey || ev.ctrlKey || ev.metaKey;
+          if (dikunci) {
+            arahTerkunci ??= Math.abs(dx) >= Math.abs(dy) ? "x" : "y";
+            if (arahTerkunci === "x") dy = 0;
+            else dx = 0;
+          } else {
+            arahTerkunci = null;
+          }
           onUpdate(el.id, { x: round(o.x + dx), y: round(o.y + dy) });
           return;
         }
@@ -540,10 +572,12 @@ export default function Canvas({
         onUpdate(el.id, { x: round(x), y: round(y), w: round(w), h: round(h) });
       };
 
-      const onUp = () => {
+      const onUp = (ev: PointerEvent) => {
+        if (ev.pointerId !== e.pointerId) return;
         window.removeEventListener("pointermove", onMove);
         window.removeEventListener("pointerup", onUp);
         window.removeEventListener("pointercancel", onUp);
+        if (shiftSelect && !bergerak) onSelect(el.id, true);
       };
 
       window.addEventListener("pointermove", onMove);

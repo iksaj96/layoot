@@ -3,6 +3,10 @@ import Link from "next/link";
 import Navbar from "./components/Navbar";
 import { createServerSupabase } from "@/lib/supabase-server";
 
+// Isi dengan tautan kontak pembuat, misalnya "https://wa.me/62xxxxxxxxxx".
+// Kalau dikosongkan, tombol kontak tidak ditampilkan.
+const KONTAK_HREF = "";
+
 function Ikon({ d }: { d: string[] }) {
   return (
     <svg
@@ -73,8 +77,8 @@ const infoLayoot = [
     label: "bg-fuchsia-600 text-white",
   },
   {
-    judul: "Khusus IKSAJ",
-    isi: "Website ini disiapkan untuk keperluan IKSAJ, belum dibuka untuk umum.",
+    judul: "Akses terbatas (beta)",
+    isi: "Layoot terbuka untuk siapa saja, tetapi selama beta akses diberikan bertahap. Hubungi pembuat terlebih dahulu.",
     kartu: "bg-indigo-100 border-indigo-900 shadow-[5px_5px_0_0_#4338ca]",
     label: "bg-indigo-600 text-white",
   },
@@ -161,7 +165,7 @@ async function HomeContent() {
       <section className="mx-auto grid max-w-6xl items-center gap-10 px-5 py-14 md:grid-cols-2 md:py-20">
         <div>
           <span className="inline-block rounded-full bg-violet-100 px-3 py-1 text-xs font-bold text-violet-700">
-            Editor desain cetak
+            Editor desain cetak · Beta
           </span>
           <h1 className="mt-5 text-4xl font-bold leading-tight md:text-5xl">
             Rancang selebaran dan majalah{" "}
@@ -189,6 +193,12 @@ async function HomeContent() {
               </Link>
             )}
           </div>
+          {!user && (
+            <p className="mt-4 max-w-md text-sm text-stone-500">
+              Layoot masih beta. Pengguna baru diminta menghubungi pembuat
+              terlebih dahulu untuk mendapatkan akses.
+            </p>
+          )}
         </div>
 
         <IlustrasiKertas />
@@ -228,7 +238,7 @@ async function HomeContent() {
             Tentang Layoot
           </span>
           <h2 className="mt-4 text-2xl font-bold md:text-3xl">
-            Dibuat dari dalam, untuk IKSAJ
+            Masih beta, dibuka bertahap
           </h2>
         </div>
 
@@ -248,12 +258,23 @@ async function HomeContent() {
             Ingin menggunakan Layoot?
           </h3>
           <p className="mt-2 max-w-3xl text-stone-700">
-            Karena Layoot masih dalam tahap pengembangan dan khusus untuk IKSAJ,
-            pengguna yang ingin memakainya diminta berkoordinasi langsung dengan
-            Adlan Madjied Ridho. Dalam pembicaraan itu akan dibahas kesepakatan
-            penggunaan, termasuk kemungkinan adanya biaya bulanan untuk menunjang
-            pengembangan dan pemeliharaan website.
+            Layoot terbuka untuk siapa saja. Namun karena masih dalam tahap
+            pengembangan, akses selama masa beta diberikan secara bertahap.
+            Silakan berkoordinasi langsung dengan Adlan Madjied Ridho untuk
+            mendapatkan akses dan membahas ketentuan penggunaan. Selama beta
+            penggunaan gratis, dan jika nanti ada biaya langganan, akan
+            diinformasikan lebih dulu.
           </p>
+          {KONTAK_HREF && (
+            <a
+              href={KONTAK_HREF}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-5 inline-block rounded-lg bg-violet-600 px-5 py-2.5 font-semibold text-white shadow-[4px_4px_0_0_#4c1d95] transition hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[2px_2px_0_0_#4c1d95]"
+            >
+              Hubungi pembuat
+            </a>
+          )}
         </div>
       </section>
 
@@ -263,8 +284,8 @@ async function HomeContent() {
             Siap membuat desain pertama Anda?
           </h2>
           <p className="mx-auto mt-3 max-w-md text-violet-100">
-            Mulai merancang dalam hitungan menit. Untuk penggunaan di luar
-            IKSAJ, hubungi pembuat terlebih dahulu.
+            Mulai merancang dalam hitungan menit. Layoot masih beta, jadi
+            hubungi pembuat terlebih dahulu untuk mendapatkan akses.
           </p>
           <Link
             href={user ? "/dasbor" : "/daftar"}

@@ -2,12 +2,13 @@
 
 import type { DesignElement } from "@/lib/types";
 import type { LayerOp } from "../core/elementOps";
-import type { Mode } from "../core/utils";
+import type { AlignAction, Mode } from "../core/utils";
 import type { ImageAsset, UploadedImage } from "./ImageUpload";
 import PropertiesPanel from "./PropertiesPanel";
 import ImageLibraryPanel from "./ImageLibraryPanel";
 import LayersPanel from "../panels/LayersPanel";
 import Icon from "../ui/Icon";
+import PropertyBar from "./PropertyBar";
 
 export type SidebarTab = "properties" | "catalog" | "layers";
 
@@ -15,6 +16,8 @@ type Props = {
   tab: SidebarTab;
   onTab: (tab: SidebarTab) => void;
   selected: DesignElement | null;
+  selectedElements: DesignElement[];
+  onAlign: (action: AlignAction) => void;
   mode: Mode;
   textBoxOptions: { id: string; label: string }[];
   onChange: (id: string, patch: Partial<DesignElement>) => void;
@@ -42,6 +45,8 @@ export default function EditorSidebar({
   tab,
   onTab,
   selected,
+  selectedElements,
+  onAlign,
   mode,
   textBoxOptions,
   onChange,
@@ -59,7 +64,8 @@ export default function EditorSidebar({
   onDeleteImage,
 }: Props) {
   return (
-    <aside className="flex w-56 min-w-0 shrink-0 flex-col border-l border-stone-300 bg-stone-100 sm:w-64">
+    <aside className="flex w-56 min-w-0 shrink-0 flex-col overflow-hidden rounded-xl border border-black/5 bg-white shadow-sm sm:w-64">
+      <PropertyBar selectedElements={selectedElements} onAlign={onAlign} />
       <div role="tablist" aria-label="Panel editor" className="flex shrink-0 border-b border-stone-300">
         {tabs.map((item) => (
           <button

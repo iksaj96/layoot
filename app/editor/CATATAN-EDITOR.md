@@ -36,7 +36,7 @@ app/editor/
     │   └── ElementView.tsx    Tampilan SATU objek di layar (teks, bentuk, gambar) + 8 pegangan ukuran + pegangan sudut
     ├── toolbar/
     │   ├── Toolbox.tsx        Kolom alat kiri (pilih, teks, persegi, elips, garis, crop) + pintasan
-    │   ├── PropertyBar.tsx    Bilah atas ringkas: perataan saat banyak objek dipilih
+    │   ├── PropertyBar.tsx    Kontrol perataan di atas panel kanan saat objek dipilih
     │   ├── PropertiesPanel.tsx Properti detail objek di sidebar
     │   ├── EditorSidebar.tsx  Sidebar tab Properti, Katalog gambar, dan Objek
     │   ├── ImageLibraryPanel.tsx Katalog gambar dari Supabase Storage
@@ -70,8 +70,8 @@ lib/types.ts                   Tipe data: Paper, DesignElement, DesignPage, Desi
 ## Cari file dari TAMPILAN (yang saya lihat di layar)
 | Bagian yang mau diubah | File |
 |---|---|
-| Bilah judul paling atas (judul, undo/redo, bantuan, status simpan, tombol Ekspor PDF) | `Editor.tsx` (bagian `<header>`), tombol PDF di `export/ExportPdf.tsx` |
-| Bilah atas (perataan objek terpilih) | `toolbar/PropertyBar.tsx` |
+| Header (judul, ukuran/orientasi kertas, undo/redo, bantuan, status simpan, tombol Ekspor PDF) | `Editor.tsx` (bagian `<header>`), tombol PDF di `export/ExportPdf.tsx` |
+| Kontrol perataan objek terpilih di panel kanan | `toolbar/PropertyBar.tsx` + `toolbar/EditorSidebar.tsx` |
 | Properti detail dan tab sidebar Properti/Katalog/Objek | `toolbar/PropertiesPanel.tsx` + `toolbar/EditorSidebar.tsx` |
 | Kolom alat di kiri, termasuk Crop, dan shortcut pada tombol | `toolbar/Toolbox.tsx` + `ui/Icon.tsx` |
 | Katalog gambar di sidebar | `toolbar/ImageLibraryPanel.tsx` |
@@ -128,17 +128,20 @@ Field baru harus opsional agar desain lama tetap aman. `pages` disimpan sebagai 
 ## Alur penting
 - **State utama** ada di `Editor.tsx`. Komponen lain hanya menerima props dan callback.
 - **Undo/redo**: `setPages(fn, kunci?)` dari `useHistory`. Kunci sama dalam 0,7 detik jadi satu langkah.
-- **Simpan otomatis**: tertunda 1,2 detik setelah `pages` atau `title` berubah. `Ctrl+S` simpan langsung.
+- **Simpan otomatis**: tertunda 1,2 detik setelah `pages`, `title`, `paper`, atau `orientation` berubah. `Ctrl+S` simpan langsung.
 - **Mode transformasi**: klik objek dua kali untuk mode putar/balik; klik tiga kali pada persegi untuk mode sudut.
-- **Pustaka gambar**: tombol gambar membuka koleksi pada bucket `design-assets`; unggahan dari pustaka atau drag-and-drop tersimpan di Storage, dan hapus aset juga melepaskan referensinya dari desain ini.
+- **Pustaka gambar**: tombol gambar membuka koleksi pada bucket `design-assets`; unggahan lebih dari 2 MB atau 2000 px per sisi menawarkan kompresi hingga batas 15 MB/2000 px, atau dapat dibatalkan. File sumber di atas 50 MB ditolak. Unggahan dari pustaka atau drag-and-drop tersimpan di Storage, dan hapus aset juga melepaskan referensinya dari desain ini.
 - **Data Supabase**: jalankan `supabase/migrations/20261015000000_profiles_and_images.sql` untuk membuat/sinkronisasi `profiles` dan `images`, termasuk backfill gambar lama dari bucket.
 - **Zoom**: scroll di `Canvas.tsx` (listener wheel non-passive), menjaga titik di bawah kursor. Geser tampilan dengan klik roda tengah.
 - **Font**: font sistem lebih dulu, lalu pengganti metrik-setara dari Google Fonts (Tinos, Arimo, Carlito, dll).
 - **Ekspor PDF**: `ExportPdf.tsx` merender semua halaman di `#area-cetak` dengan satuan mm, lalu `window.print()`.
+- **Ukuran kertas dan orientasi**: `paper` serta `orientation` berlaku untuk seluruh dokumen dan disimpan di kolom desain yang sama; semua halaman memakai ukuran aktif ketika diedit dan diekspor.
+- **Ukuran teks baru**: `DEFAULT_FONT_SIZE` di `lib/types.ts` menjadi sumber nilai default teks pada editor dan ekspor.
 
 ## Pintasan keyboard saat ini
 Ctrl+S simpan, Ctrl+Z urungkan, Ctrl+Shift+Z / Ctrl+Y ulangi, Ctrl+C/X/V salin/potong/tempel, Ctrl+D duplikat,
 Delete/Backspace hapus, Tab / Shift+Tab pilih objek berikutnya/sebelumnya, Enter edit teks, Panah geser 1 mm (Shift 10 mm),
+Shift atau Ctrl sambil menyeret objek mengunci gerakan ke sumbu horizontal/vertikal,
 V/T/R/E pilih alat, Esc batal, Ctrl+B/I/U gaya teks, Ctrl+] / Ctrl+[ naik/turun lapisan,
 Shift+PageUp/PageDown ke paling atas/bawah, Alt+PageUp/PageDown naik/turun lapisan,
 Ctrl+= / Ctrl+- / Ctrl+0 zoom, ? atau F1 bantuan.
@@ -153,3 +156,4 @@ Catatan: Ctrl+PageUp/PageDown dipakai Chrome untuk pindah tab, jadi tidak bisa d
 - 2026-10-15: Struktur folder dirapikan; penggaris dihapus; zoom scroll + geser klik roda tengah; shortcut + undo/redo; banyak font; gambar di dalam bentuk; sudut persegi; pemilih warna kustom.
 - 2026-10-15: Kotak teks mendukung rata kiri-kanan, kolom, dan alur teks ke kotak berikutnya; layar dan PDF memakai pembagian teks yang sama.
 - 2026-10-15: Properti objek dipindah ke sidebar bertab Properti/Katalog/Objek, alat Crop mendukung objek dan gambar, serta shortcut ditampilkan pada tombol yang memilikinya.
+- 2026-10-15: Header editor diringkas menjadi satu baris; pengaturan ukuran/orientasi dokumen dipindah ke header, sedangkan kontrol perataan berada di kartu panel kanan.

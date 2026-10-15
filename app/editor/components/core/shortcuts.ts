@@ -47,6 +47,7 @@ export const SHORTCUTS: Shortcut[] = [
   { key: "Tab / Shift + Tab", label: "Pilih object berikutnya/sebelumnya", description: "Pindah pilihan ke object lain.", category: "Objek" },
   { key: "Enter", label: "Edit teks", description: "Edit teks pada object terpilih.", category: "Objek" },
   { key: "Panah / Shift + Panah", label: "Geser object", description: "Geser 1 mm; tahan Shift untuk menggeser 10 mm.", category: "Objek" },
+  { key: "Shift / Ctrl + seret", label: "Geser lurus", description: "Kunci gerakan object pada sumbu horizontal atau vertikal berdasarkan arah seretan.", category: "Objek" },
   { key: "Klik 2x / 3x", label: "Putar/balik / atur sudut", description: "Klik objek dua kali untuk membuka mode putar dan balik; klik tiga kali pada persegi untuk mengatur sudut.", category: "Objek" },
   { key: "Ctrl + ] / Ctrl + [", label: "Naik/turun satu lapisan", description: "Ubah urutan lapisan object.", category: "Lapisan" },
   { key: "Ctrl + PageUp / PageDown", label: "Naik/turun satu lapisan", description: "Ubah urutan lapisan object.", category: "Lapisan" },

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import type { LayerOp } from "../core/elementOps";
 import type { AlignAction, Tool } from "../core/utils";
 import { SHORTCUTS } from "../core/shortcuts";
@@ -29,7 +29,7 @@ export type AksiPintasan = {
 
 export function useShortcuts(aksi: AksiPintasan, aktif = true) {
   const ref = useRef(aksi);
-  useEffect(() => {
+  useLayoutEffect(() => {
     ref.current = aksi;
   });
 
@@ -40,21 +40,26 @@ export function useShortcuts(aksi: AksiPintasan, aktif = true) {
       const a = ref.current;
       const ctrl = e.ctrlKey || e.metaKey;
       const k = e.key.toLowerCase();
+      const t = e.target as HTMLElement | null;
+      const diInput = !!t?.closest("input, textarea, select") || !!t?.isContentEditable;
+
+      if (e.repeat && !e.key.startsWith("Arrow")) return;
 
       // Ctrl+S berlaku di mana pun, termasuk saat mengetik judul
       if (ctrl && k === "s") {
         e.preventDefault();
+        e.stopPropagation();
         a.save();
         return;
       }
 
       // Jangan ganggu pengetikan di kolom input
-      const t = e.target as HTMLElement | null;
-      if (t?.closest("input, textarea, select") || t?.isContentEditable) return;
+      if (diInput) return;
       const diTombol = !!t?.closest("button, a");
 
       const jalankan = (fn: () => void) => {
         e.preventDefault();
+        e.stopPropagation();
         fn();
       };
 
@@ -124,17 +129,17 @@ export function useShortcuts(aksi: AksiPintasan, aktif = true) {
       }
 
       if (e.shiftKey) {
-        if (k === "t") a.tool("teks");
-        else if (k === "r") a.tool("persegi");
-        else if (k === "e") a.tool("elips");
-        else if (k === "l") a.tool("garis");
-        else if (k === "x") a.tool("crop");
+        if (k === "t") return jalankan(() => a.tool("teks"));
+        else if (k === "r") return jalankan(() => a.tool("persegi"));
+        else if (k === "e") return jalankan(() => a.tool("elips"));
+        else if (k === "l") return jalankan(() => a.tool("garis"));
+        else if (k === "x") return jalankan(() => a.tool("crop"));
         return;
       }
-      if (k === "v") a.tool("pilih");
+      if (k === "v") jalankan(() => a.tool("pilih"));
     }
 
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [aktif]);
 }

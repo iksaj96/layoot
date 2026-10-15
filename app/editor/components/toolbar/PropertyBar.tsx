@@ -1,12 +1,9 @@
 import type { AlignAction } from "../core/utils";
 import { IconButton } from "../ui/Icon";
-import type { DesignElement, Paper } from "@/lib/types";
+import type { DesignElement } from "@/lib/types";
 
 type Props = {
-  selected: DesignElement | null;
   selectedElements: DesignElement[];
-  paper: Paper;
-  size: { w: number; h: number };
   onAlign: (action: AlignAction) => void;
 };
 
@@ -32,41 +29,25 @@ const alignButtons: {
 ];
 
 export default function PropertyBar({
-  selected,
   selectedElements,
-  paper,
-  size,
   onAlign,
 }: Props) {
+  if (selectedElements.length === 0) return null;
+
   return (
-    <div className="flex min-h-11 shrink-0 flex-wrap items-center gap-1.5 border-b border-stone-300 bg-stone-100 px-3 py-1">
-      {selectedElements.length > 0 ? (
-        <>
-          <span className="mr-1 text-xs font-semibold text-stone-600">Align</span>
-          {alignButtons.map(({ action, icon, label }) => (
-            <IconButton
-              key={action}
-              icon={icon}
-              label={label}
-              shortcut={action}
-              disabled={action !== "P" && selectedElements.length < 2}
-              onClick={() => onAlign(action)}
-            />
-          ))}
-          <span className="ml-1 text-xs text-stone-600">
-            {selectedElements.length} objek terpilih
-          </span>
-        </>
-      ) : (
-        <span className="text-xs text-stone-600">
-          <span className="font-bold text-stone-800">
-            Kertas {paper} · {size.w} × {size.h} mm
-          </span>
-          <span className="ml-2">
-            {selected ? "Properti objek tersedia di panel kanan." : "Pilih objek untuk mengubah propertinya."}
-          </span>
-        </span>
-      )}
+    <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-black/5 p-1.5">
+      <span className="mr-0.5 text-[10px] font-semibold text-stone-500">Rata</span>
+      {alignButtons.map(({ action, icon, label }) => (
+        <IconButton
+          key={action}
+          icon={icon}
+          label={label}
+          shortcut={action}
+          small
+          disabled={action !== "P" && selectedElements.length < 2}
+          onClick={() => onAlign(action)}
+        />
+      ))}
     </div>
   );
 }

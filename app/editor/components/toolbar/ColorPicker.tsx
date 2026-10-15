@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { PRESET_COLORS, hexToHsv, hsvToHex, isHex } from "../core/color";
 import type { HSV } from "../core/color";
@@ -17,6 +17,7 @@ type Props = {
 const CATUR =
   "repeating-conic-gradient(#d6d3d1 0% 25%, #ffffff 0% 50%) 50% / 8px 8px";
 const LEBAR = 232;
+const PERKIRAAN_TINGGI = 320;
 
 type EyeDropperCtor = new () => { open: () => Promise<{ sRGBHex: string }> };
 
@@ -63,6 +64,28 @@ export default function ColorPicker({
   );
   const [draf, setDraf] = useState(isHex(value) ? value : "");
 
+  const aturPosisi = useCallback(() => {
+    const tombolAktif = tombol.current;
+    if (!tombolAktif) return;
+    const r = tombolAktif.getBoundingClientRect();
+    const lebarAktif = Math.min(LEBAR, window.innerWidth - 16);
+    const ruangBawah = window.innerHeight - r.bottom - 14;
+    const ruangAtas = r.top - 14;
+    const top =
+      ruangBawah >= PERKIRAAN_TINGGI
+        ? r.bottom + 6
+        : ruangAtas >= PERKIRAAN_TINGGI
+          ? r.top - PERKIRAAN_TINGGI - 6
+          : Math.max(
+              8,
+              Math.min(r.bottom + 6, window.innerHeight - PERKIRAAN_TINGGI - 8)
+            );
+    setPos({
+      left: Math.max(8, Math.min(r.left, window.innerWidth - lebarAktif - 8)),
+      top,
+    });
+  }, []);
+
   // Sinkronkan bila warna berubah dari luar (mis. ganti objek terpilih)
   useEffect(() => {
     if (isHex(value)) {
@@ -74,6 +97,11 @@ export default function ColorPicker({
   // Tutup saat klik di luar atau tekan Esc
   useEffect(() => {
     if (!buka) return;
+    let frame = 0;
+    const aturUlang = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(aturPosisi);
+    };
     const luar = (e: PointerEvent) => {
       const t = e.target as Node;
       if (kotak.current?.contains(t) || tombol.current?.contains(t)) return;
@@ -84,19 +112,20 @@ export default function ColorPicker({
     };
     document.addEventListener("pointerdown", luar);
     document.addEventListener("keydown", esc);
+    window.addEventListener("resize", aturUlang);
+    window.visualViewport?.addEventListener("resize", aturUlang);
     return () => {
       document.removeEventListener("pointerdown", luar);
       document.removeEventListener("keydown", esc);
+      window.removeEventListener("resize", aturUlang);
+      window.visualViewport?.removeEventListener("resize", aturUlang);
+      cancelAnimationFrame(frame);
     };
-  }, [buka]);
+  }, [aturPosisi, buka]);
 
   function toggle() {
     if (!buka && tombol.current) {
-      const r = tombol.current.getBoundingClientRect();
-      setPos({
-        left: Math.max(8, Math.min(r.left, window.innerWidth - LEBAR - 8)),
-        top: r.bottom + 6,
-      });
+      aturPosisi();
     }
     setBuka(!buka);
   }
@@ -152,8 +181,15 @@ export default function ColorPicker({
             ref={kotak}
             role="dialog"
             aria-label={`Pilih ${label.toLowerCase()}`}
-            className="select-none rounded-lg border border-stone-300 bg-white p-3 shadow-xl"
-            style={{ position: "fixed", left: pos.left, top: pos.top, width: LEBAR, zIndex: 100 }}
+            className="select-none overflow-y-auto rounded-lg border border-stone-300 bg-white p-3 shadow-xl"
+            style={{
+              position: "fixed",
+              left: pos.left,
+              top: pos.top,
+              width: "min(232px, calc(100vw - 16px))",
+              maxHeight: "calc(100dvh - 16px)",
+              zIndex: 100,
+            }}
           >
             {/* Panel warna bebas */}
             <div

@@ -1,3 +1,4 @@
+import { DEFAULT_FONT_SIZE } from "@/lib/types";
 import type { DesignElement } from "@/lib/types";
 import { PT_TO_MM } from "./utils";
 import { fontCss } from "./fonts";
@@ -10,7 +11,7 @@ export type TextFlowSegment = {
 };
 
 function fontSizeMm(el: DesignElement): number {
-  return (el.fontSize ?? 12) * PT_TO_MM;
+  return (el.fontSize ?? DEFAULT_FONT_SIZE) * PT_TO_MM;
 }
 
 function lineStarts(

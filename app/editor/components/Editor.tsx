@@ -3,20 +3,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase";
-import { PAPER_SIZE_MM } from "@/lib/types";
-import type { DesignElement, DesignPage, EditorDesign } from "@/lib/types";
+import { PAPER_OPTIONS, PAPER_SIZE_MM } from "@/lib/types";
+import type { DesignElement, DesignPage, EditorDesign, Paper } from "@/lib/types";
 import Canvas from "./canvas/Canvas";
 import ExportPdf from "./export/ExportPdf";
 import PageStrip from "./panels/PageStrip";
 import ShortcutHelp from "./panels/ShortcutHelp";
 import StatusBar from "./panels/StatusBar";
-import PropertyBar from "./toolbar/PropertyBar";
 import Toolbox from "./toolbar/Toolbox";
 import EditorSidebar from "./toolbar/EditorSidebar";
 import type { SidebarTab } from "./toolbar/EditorSidebar";
 import { uploadImageFile } from "./toolbar/ImageUpload";
 import type { ImageAsset, UploadedImage } from "./toolbar/ImageUpload";
-import Icon, { IconButton } from "./ui/Icon";
+import Icon from "./ui/Icon";
+import type { IconName } from "./ui/Icon";
 import { cloneElement, moveLayer, ubahElemen } from "./core/elementOps";
 import type { LayerOp } from "./core/elementOps";
 import { calculateTextFlow } from "./core/textFlow";
@@ -49,12 +49,46 @@ const getFontsSnapshot = () =>
   typeof document !== "undefined" && document.fonts.status === "loaded";
 const getServerFontsSnapshot = () => false;
 
+function HeaderIconButton({
+  icon,
+  label,
+  shortcut,
+  disabled = false,
+  onClick,
+}: {
+  icon: IconName;
+  label: string;
+  shortcut?: string;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  const accessibleLabel = shortcut ? `${label} (${shortcut})` : label;
+
+  return (
+    <button
+      type="button"
+      title={accessibleLabel}
+      aria-label={accessibleLabel}
+      disabled={disabled}
+      onClick={onClick}
+      className="flex h-8 min-w-8 shrink-0 items-center justify-center gap-1 rounded-lg px-1.5 text-stone-700 hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      <Icon name={icon} size={18} />
+      {shortcut && <span className="hidden text-[10px] md:inline">{shortcut}</span>}
+    </button>
+  );
+}
+
 export default function Editor({ design }: { design: EditorDesign }) {
   useGoogleFonts();
 
-  const base = PAPER_SIZE_MM[design.paper];
+  const [paper, setPaper] = useState<Paper>(design.paper);
+  const [orientation, setOrientation] = useState<EditorDesign["orientation"]>(
+    design.orientation
+  );
+  const base = PAPER_SIZE_MM[paper];
   const size =
-    design.orientation === "landscape" ? { w: base.h, h: base.w } : base;
+    orientation === "landscape" ? { w: base.h, h: base.w } : base;
 
   const [title, setTitle] = useState(design.title);
   const {
@@ -82,6 +116,7 @@ export default function Editor({ design }: { design: EditorDesign }) {
   const [scale, setScale] = useState(1.2); // px per mm
   const [status, setStatus] = useState<Status>("tersimpan");
   const [helpOpen, setHelpOpen] = useState(false);
+  const sudahAturSkalaAwal = useRef(false);
   const hydrated = useSyncExternalStore(
     subscribeToClient,
     getClientSnapshot,
@@ -152,6 +187,8 @@ export default function Editor({ design }: { design: EditorDesign }) {
   }, [size.w, size.h]);
 
   useEffect(() => {
+    if (sudahAturSkalaAwal.current) return;
+    sudahAturSkalaAwal.current = true;
     setScale(fitScale());
   }, [fitScale]);
 
@@ -161,21 +198,21 @@ export default function Editor({ design }: { design: EditorDesign }) {
 
   /* ---------- Simpan otomatis ---------- */
 
-  const terbaru = useRef({ pages, title });
+  const terbaru = useRef({ pages, title, paper, orientation });
   useEffect(() => {
-    terbaru.current = { pages, title };
+    terbaru.current = { pages, title, paper, orientation };
   });
 
   const simpanId = useRef(0);
   const pertama = useRef(true);
 
   const kirim = useCallback(async () => {
-    const { pages: p, title: t } = terbaru.current;
+    const { pages: p, title: t, paper: k, orientation: o } = terbaru.current;
     const id = ++simpanId.current;
     setStatus("menyimpan");
     const { error } = await createClient()
       .from("designs")
-      .update({ title: t, pages: p })
+      .update({ title: t, pages: p, paper: k, orientation: o })
       .eq("id", design.id);
     if (simpanId.current === id) setStatus(error ? "gagal" : "tersimpan");
   }, [design.id]);
@@ -189,7 +226,7 @@ export default function Editor({ design }: { design: EditorDesign }) {
     simpanId.current += 1; // hasil simpan lama yang masih berjalan diabaikan
     const t = setTimeout(kirim, 1200);
     return () => clearTimeout(t);
-  }, [pages, title, kirim]);
+  }, [pages, title, paper, orientation, kirim]);
 
   useEffect(() => {
     if (status === "tersimpan") return;
@@ -265,6 +302,7 @@ export default function Editor({ design }: { design: EditorDesign }) {
     setPesan("");
     try {
       const image = await uploadImageFile(file);
+      if (!image) return;
       setImageLibraryRevision((revision) => revision + 1);
       tambahGambar(image, x, y);
     } catch (error) {
@@ -521,7 +559,8 @@ export default function Editor({ design }: { design: EditorDesign }) {
   function aktivasiObjek(id: string, clickCount: number) {
     if (tool !== "pilih") return;
     const element = elements.find((el) => el.id === id);
-    if (clickCount === 2) setMode("putar");
+    if (clickCount === 2 && element?.type === "text") setEditingId(id);
+    else if (clickCount === 2) setMode("putar");
     else if (clickCount >= 3) setMode(element?.type === "rect" ? "sudut" : "ukuran");
   }
 
@@ -595,48 +634,134 @@ export default function Editor({ design }: { design: EditorDesign }) {
   useShortcuts(aksi, !helpOpen);
 
   return (
-    <div className="flex h-dvh select-none flex-col bg-stone-100 text-stone-900 print:hidden">
-      {/* Bilah judul */}
-      <header className="flex h-11 shrink-0 items-center gap-2 border-b border-stone-300 bg-white px-2">
+    <div className="flex h-dvh select-none flex-col overflow-hidden bg-stone-100 text-stone-900 print:hidden">
+      <header className="flex h-12 shrink-0 items-center gap-1 border-b border-black/10 bg-white px-2">
         <Link
           href="/dasbor"
           title="Kembali ke dasbor"
           aria-label="Kembali ke dasbor"
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded text-stone-700 hover:bg-stone-200"
+          className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-black/5 bg-white px-2 text-stone-700 shadow-sm hover:bg-stone-50"
         >
-          <Icon name="arrowLeft" />
+          <Icon name="chevronLeft" size={18} />
+          <span className="text-xs font-medium">Kembali</span>
         </Link>
-        <span className="hidden shrink-0 text-lg font-bold sm:inline">
-          Lay<span className="text-indigo-600">oot</span>
+        <span className="hidden shrink-0 text-base font-bold sm:inline">
+          <span className="inline-flex h-8 items-center rounded-lg border border-black/5 bg-white px-2.5 shadow-sm">
+            Lay<span className="text-indigo-600">oot</span>
+          </span>
         </span>
-        <input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          aria-label="Judul desain"
-          className="min-w-0 flex-1 rounded border border-transparent px-2 py-1 text-sm font-bold focus:border-stone-300"
-        />
-        <IconButton icon="undo" label="Urungkan" shortcut="Ctrl+Z" disabled={!canUndo} onClick={undo} />
-        <IconButton icon="redo" label="Ulangi" shortcut="Ctrl+Y" disabled={!canRedo} onClick={redo} />
-        <IconButton icon="help" label="Katalog shortcut" shortcut="?" onClick={() => setHelpOpen(true)} />
-        <span
-          className={`hidden shrink-0 text-xs font-semibold sm:inline ${
-            status === "gagal" ? "text-red-700" : "text-stone-500"
-          }`}
-        >
-          {LABEL_STATUS[status]}
-        </span>
+        <div className="flex min-w-0 flex-1 items-center gap-1">
+          <Icon name="fileText" size={16} className="shrink-0 text-stone-500" />
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            aria-label="Judul desain"
+            className="min-w-0 flex-1 rounded-lg border border-transparent px-1.5 py-1 text-sm font-bold focus:border-stone-300"
+          />
+          <label
+            title="Ukuran kertas"
+            className="flex h-8 shrink-0 items-center gap-0.5 rounded-lg px-1 text-stone-700 hover:bg-black/5"
+          >
+            <Icon name="fileText" size={18} />
+            <select
+              value={paper}
+              onChange={(event) => {
+                const option = PAPER_OPTIONS.find(
+                  (item) => item.value === event.target.value
+                );
+                if (option) setPaper(option.value);
+              }}
+              aria-label="Ukuran kertas"
+              className="h-8 w-[3.3rem] appearance-none bg-transparent text-xs font-semibold outline-none"
+            >
+              {PAPER_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.value}
+                </option>
+              ))}
+            </select>
+            <Icon name="chevronDown" size={14} className="-ml-2 pointer-events-none" />
+          </label>
+          <div className="flex shrink-0 items-center">
+            <button
+              type="button"
+              title="Potret"
+              aria-label="Potret"
+              aria-pressed={orientation === "portrait"}
+              onClick={() => setOrientation("portrait")}
+              className={`flex h-8 w-8 items-center justify-center rounded-lg hover:bg-black/5 ${
+                orientation === "portrait" ? "bg-black/5 text-stone-900" : "text-stone-500"
+              }`}
+            >
+              <Icon name="rectangleVertical" size={18} />
+            </button>
+            <button
+              type="button"
+              title="Lanskap"
+              aria-label="Lanskap"
+              aria-pressed={orientation === "landscape"}
+              onClick={() => setOrientation("landscape")}
+              className={`flex h-8 w-8 items-center justify-center rounded-lg hover:bg-black/5 ${
+                orientation === "landscape" ? "bg-black/5 text-stone-900" : "text-stone-500"
+              }`}
+            >
+              <Icon name="rectangleHorizontal" size={18} />
+            </button>
+          </div>
+          <span className="hidden shrink-0 whitespace-nowrap text-[11px] text-stone-500 lg:inline">
+            {size.w} × {size.h} mm
+          </span>
+        </div>
+
+        <div className="ml-auto flex shrink-0 items-center gap-0.5">
+          <HeaderIconButton
+            icon="undo"
+            label="Urungkan"
+            shortcut="Ctrl+Z"
+            disabled={!canUndo}
+            onClick={undo}
+          />
+          <HeaderIconButton
+            icon="redo"
+            label="Ulangi"
+            shortcut="Ctrl+Y"
+            disabled={!canRedo}
+            onClick={redo}
+          />
+          <HeaderIconButton
+            icon="help"
+            label="Bantuan shortcut"
+            shortcut="?"
+            onClick={() => setHelpOpen(true)}
+          />
+          <span
+            role="status"
+            title={LABEL_STATUS[status]}
+            aria-label={LABEL_STATUS[status]}
+            className={`flex h-8 shrink-0 items-center gap-1 px-1 ${
+              status === "gagal" ? "text-red-700" : status === "tersimpan" ? "text-emerald-600" : "text-stone-500"
+            }`}
+          >
+            <Icon
+              name={
+                status === "tersimpan"
+                  ? "circleCheck"
+                  : status === "gagal"
+                    ? "help"
+                    : "loader"
+              }
+              size={18}
+              className={status === "menyimpan" || status === "belum" ? "animate-spin" : undefined}
+            />
+            <span className="hidden whitespace-nowrap text-xs font-semibold lg:inline">
+              {LABEL_STATUS[status]}
+            </span>
+          </span>
+        </div>
         <ExportPdf title={title} pages={pages} size={size} />
       </header>
 
-      <PropertyBar
-        selected={selected}
-        selectedElements={selectedElements}
-        onAlign={alignSelected}
-        paper={design.paper}
-        size={size}
-      />
-
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 gap-2 p-2">
         <Toolbox
           tool={tool}
           onTool={setTool}
@@ -666,6 +791,8 @@ export default function Editor({ design }: { design: EditorDesign }) {
           tab={sidebarTab}
           onTab={setSidebarTab}
           selected={selected}
+          selectedElements={selectedElements}
+          onAlign={alignSelected}
           mode={mode}
           textBoxOptions={textBoxOptions}
           onChange={updateElement}

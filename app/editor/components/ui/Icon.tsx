@@ -4,6 +4,9 @@ const PATHS = {
   ],
   text: ["M4 7V4h16v3", "M9 20h6", "M12 4v16"],
   rect: ["M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"],
+  rectangleVertical: ["M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"],
+  rectangleHorizontal: ["M5 7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z"],
+  fileText: ["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z", "M14 2v6h6", "M8 13h8", "M8 17h8"],
   ellipse: ["M2 12a10 7 0 1 0 20 0a10 7 0 1 0-20 0z"],
   line: ["M5 19 19 5"],
   image: [
@@ -45,10 +48,13 @@ const PATHS = {
     "M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3",
     "M12 17h.01",
   ],
+  circleCheck: ["M22 11.08V12a10 10 0 1 1-5.93-9.14", "m9 11 3 3L22 4"],
+  loader: ["M21 12a9 9 0 0 1-9 9", "M3 12a9 9 0 0 1 9-9"],
   plus: ["M5 12h14", "M12 5v14"],
   minus: ["M5 12h14"],
   chevronLeft: ["m15 18-6-6 6-6"],
   chevronRight: ["m9 18 6-6-6-6"],
+  chevronDown: ["m6 9 6 6 6-6"],
   download: ["M12 15V3", "m7 10 5 5 5-5", "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"],
   x: ["M18 6 6 18", "m6 6 12 12"],
   arrowLeft: ["m12 19-7-7 7-7", "M19 12H5"],
@@ -80,9 +86,11 @@ export type IconName = keyof typeof PATHS;
 export default function Icon({
   name,
   size = 18,
+  className,
 }: {
   name: IconName;
   size?: number;
+  className?: string;
 }) {
   return (
     <svg
@@ -91,10 +99,11 @@ export default function Icon({
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="2"
+      strokeWidth="1.75"
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
+      className={className}
     >
       {PATHS[name].map((d) => (
         <path key={d} d={d} />

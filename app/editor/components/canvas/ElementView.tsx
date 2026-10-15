@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { DEFAULT_FONT_SIZE } from "@/lib/types";
 import type { DesignElement } from "@/lib/types";
 import { borderRadiusCss, radiusOf } from "../core/elementOps";
 import { fontCss } from "../core/fonts";
@@ -81,7 +82,7 @@ const ElementView = memo(function ElementView({
     height: "100%",
     lineHeight: 1.3,
     fontFamily: fontCss(el.fontFamily),
-    fontSize: (el.fontSize ?? 12) * PT_TO_MM * scale,
+    fontSize: (el.fontSize ?? DEFAULT_FONT_SIZE) * PT_TO_MM * scale,
     fontWeight: el.bold ? 700 : 400,
     fontStyle: el.italic ? "italic" : "normal",
     textDecoration: el.underline ? "underline" : "none",
@@ -189,6 +190,7 @@ const ElementView = memo(function ElementView({
             value={textFlow?.fullText ?? el.text ?? ""}
             onChange={(e) => onText(textFlow?.sourceId ?? el.id, e.target.value)}
             onBlur={onEditEnd}
+            onClick={(e) => e.stopPropagation()}
             onKeyDown={(e) => {
               e.stopPropagation();
               if (e.key === "Escape") onEditEnd();
@@ -204,6 +206,7 @@ const ElementView = memo(function ElementView({
               margin: 0,
               background: "#fff",
               userSelect: "text",
+              WebkitUserSelect: "text",
             }}
           />
         ) : (

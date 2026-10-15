@@ -27,17 +27,22 @@ type Props = {
 
 export const BUCKET = "design-assets";
 const MAKS_SISI = 2000; // px, cukup untuk cetak A4
-const MAKS_ASLI = 15 * 1024 * 1024;
+const MAKS_UKURAN = 15 * 1024 * 1024;
+const MAKS_FILE_SUMBER = 50 * 1024 * 1024;
+const PERLU_KOMPRESI = 2 * 1024 * 1024;
 const TIPE = ["image/png", "image/jpeg", "image/webp"];
 
-export async function uploadImageFile(file: File): Promise<UploadedImage> {
+export async function uploadImageFile(file: File): Promise<UploadedImage | null> {
   if (!TIPE.includes(file.type)) {
     throw new Error("Format gambar harus PNG, JPG, atau WebP.");
   }
-  if (file.size > MAKS_ASLI) {
-    throw new Error("Ukuran file maksimal 15 MB.");
+  if (file.size > MAKS_FILE_SUMBER) {
+    throw new Error("Ukuran gambar sumber maksimal 50 MB.");
   }
 
+  const prepared = await siapkan(file);
+  if (!prepared) return null;
+  const { blob, width, height, type } = prepared;
   const supabase = createClient();
   const {
     data: { user },
@@ -46,7 +51,6 @@ export async function uploadImageFile(file: File): Promise<UploadedImage> {
   if (userError) throw userError;
   if (!user) throw new Error("Sesi berakhir. Silakan masuk lagi.");
 
-  const { blob, width, height, type } = await siapkan(file);
   const ext =
     type === "image/png" ? "png" : type === "image/webp" ? "webp" : "jpg";
   const nama = file.name
@@ -145,33 +149,61 @@ async function siapkan(file: File) {
   const { width, height } = bmp;
   const sisiPanjang = Math.max(width, height);
 
-  if (sisiPanjang <= MAKS_SISI && file.size <= 2 * 1024 * 1024) {
+  const perluKompresi =
+    sisiPanjang > MAKS_SISI || file.size > PERLU_KOMPRESI;
+  if (!perluKompresi) {
     bmp.close();
     return { blob: file as Blob, width, height, type: file.type };
   }
 
+  const ukuranMb = (file.size / (1024 * 1024)).toFixed(1);
+  const lanjut = window.confirm(
+    `Gambar berukuran ${width} × ${height} px (${ukuranMb} MB). Batas unggah 15 MB dan 2000 px per sisi. Tekan OK untuk kompres dan unggah, atau Batal untuk membatalkan.`
+  );
+  if (!lanjut) {
+    bmp.close();
+    return null;
+  }
+
   const k = Math.min(1, MAKS_SISI / sisiPanjang);
-  const w = Math.round(width * k);
-  const h = Math.round(height * k);
+  let w = Math.round(width * k);
+  let h = Math.round(height * k);
 
   const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
   const ctx = canvas.getContext("2d");
   if (!ctx) {
     bmp.close();
     throw new Error("Browser tidak mendukung pemrosesan gambar.");
   }
-  ctx.drawImage(bmp, 0, 0, w, h);
-  bmp.close();
 
-  const type = file.type === "image/png" ? "image/png" : "image/jpeg";
-  const blob = await new Promise<Blob | null>((res) =>
-    canvas.toBlob(res, type, 0.85)
-  );
+  let blob: Blob | null = null;
+  const qualities = [0.85, 0.7, 0.55];
+  try {
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      canvas.width = w;
+      canvas.height = h;
+      ctx.clearRect(0, 0, w, h);
+      ctx.drawImage(bmp, 0, 0, w, h);
+
+      for (const quality of qualities) {
+        blob = await new Promise<Blob | null>((resolve) =>
+          canvas.toBlob(resolve, "image/webp", quality)
+        );
+        if (blob && blob.size <= MAKS_UKURAN) break;
+      }
+      if (blob && blob.size <= MAKS_UKURAN) break;
+      w = Math.max(1, Math.round(w * 0.8));
+      h = Math.max(1, Math.round(h * 0.8));
+    }
+  } finally {
+    bmp.close();
+  }
   if (!blob) throw new Error("Gagal memproses gambar.");
+  if (blob.size > MAKS_UKURAN) {
+    throw new Error("Gambar masih melebihi batas 15 MB setelah dikompres.");
+  }
 
-  return { blob, width: w, height: h, type };
+  return { blob, width: w, height: h, type: blob.type };
 }
 
 export default function ImageUpload({
@@ -193,7 +225,8 @@ export default function ImageUpload({
 
     setBusy(true);
     try {
-      onUploaded(await uploadImageFile(file));
+      const image = await uploadImageFile(file);
+      if (image) onUploaded(image);
     } catch (err) {
       onError(err instanceof Error ? err.message : "Gagal mengunggah gambar.");
     } finally {

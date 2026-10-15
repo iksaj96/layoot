@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import BuatDesain from "@/app/components/BuatDesain";
 import KeluarButton from "@/app/components/KeluarButton";
@@ -8,6 +9,11 @@ import KeluarButton from "@/app/components/KeluarButton";
 export const metadata = { title: "Dasbor — Layoot" };
 
 async function DasborIsi() {
+  // Tandai bahwa komponen ini dirender saat ada request (bukan saat prerender),
+  // supaya nilai yang berubah-ubah seperti Date.now() di dalam klien Supabase
+  // tidak dihitung lebih awal.
+  await connection();
+
   const supabase = await createServerSupabase();
 
   const {

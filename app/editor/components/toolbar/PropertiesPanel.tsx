@@ -1,5 +1,6 @@
 "use client";
 
+import { DEFAULT_FONT_SIZE } from "@/lib/types";
 import type { DesignElement } from "@/lib/types";
 import { radiusOf } from "../core/elementOps";
 import type { LayerOp } from "../core/elementOps";
@@ -106,64 +107,74 @@ export default function PropertiesPanel({
           {/* ---------- Teks ---------- */}
           {selected.type === "text" && (
             <>
-              <span className="w-full text-xs font-bold text-stone-600">Teks</span>
-              <FontSelect
-                value={selected.fontFamily}
-                onChange={(nama) => onChange(selected.id, { fontFamily: nama || undefined })}
-              />
-              <NumberField
-                label="Ukuran"
-                value={selected.fontSize ?? 12}
-                min={4}
-                step={1}
-                width="w-14"
-                onChange={(v) => onChange(selected.id, { fontSize: v })}
-              />
-              <IconButton
-                icon="bold"
-                label="Tebal"
-                shortcut="Ctrl+B"
-                active={!!selected.bold}
-                onClick={() => onChange(selected.id, { bold: !selected.bold })}
-              />
-              <IconButton
-                icon="italic"
-                label="Miring"
-                shortcut="Ctrl+I"
-                active={!!selected.italic}
-                onClick={() => onChange(selected.id, { italic: !selected.italic })}
-              />
-              <IconButton
-                icon="underline"
-                label="Garis bawah"
-                shortcut="Ctrl+U"
-                active={!!selected.underline}
-                onClick={() => onChange(selected.id, { underline: !selected.underline })}
-              />
-              <IconButton
-                icon="alignLeft"
-                label="Rata kiri"
-                active={(selected.align ?? "left") === "left"}
-                onClick={() => onChange(selected.id, { align: "left" })}
-              />
-              <IconButton
-                icon="alignCenter"
-                label="Rata tengah"
-                active={selected.align === "center"}
-                onClick={() => onChange(selected.id, { align: "center" })}
-              />
-              <IconButton
-                icon="alignRight"
-                label="Rata kanan"
-                active={selected.align === "right"}
-                onClick={() => onChange(selected.id, { align: "right" })}
-              />
-              <IconButton
-                icon="alignJustify"
-                label="Rata kiri-kanan"
-                active={selected.align === "justify"}
-                onClick={() => onChange(selected.id, { align: "justify" })}
-              />
+              <section className="flex w-full flex-col gap-2">
+                <span className="text-xs font-bold text-stone-600">Teks</span>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <FontSelect
+                    value={selected.fontFamily}
+                    onChange={(nama) =>
+                      onChange(selected.id, { fontFamily: nama || undefined })
+                    }
+                  />
+                  <NumberField
+                    label="Ukuran"
+                    value={selected.fontSize ?? DEFAULT_FONT_SIZE}
+                    min={4}
+                    step={1}
+                    width="w-14"
+                    onChange={(v) => onChange(selected.id, { fontSize: v })}
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-1">
+                  <IconButton
+                    icon="bold"
+                    label="Tebal"
+                    shortcut="Ctrl+B"
+                    active={!!selected.bold}
+                    onClick={() => onChange(selected.id, { bold: !selected.bold })}
+                  />
+                  <IconButton
+                    icon="italic"
+                    label="Miring"
+                    shortcut="Ctrl+I"
+                    active={!!selected.italic}
+                    onClick={() => onChange(selected.id, { italic: !selected.italic })}
+                  />
+                  <IconButton
+                    icon="underline"
+                    label="Garis bawah"
+                    shortcut="Ctrl+U"
+                    active={!!selected.underline}
+                    onClick={() =>
+                      onChange(selected.id, { underline: !selected.underline })
+                    }
+                  />
+                  <IconButton
+                    icon="alignLeft"
+                    label="Rata kiri"
+                    active={(selected.align ?? "left") === "left"}
+                    onClick={() => onChange(selected.id, { align: "left" })}
+                  />
+                  <IconButton
+                    icon="alignCenter"
+                    label="Rata tengah"
+                    active={selected.align === "center"}
+                    onClick={() => onChange(selected.id, { align: "center" })}
+                  />
+                  <IconButton
+                    icon="alignRight"
+                    label="Rata kanan"
+                    active={selected.align === "right"}
+                    onClick={() => onChange(selected.id, { align: "right" })}
+                  />
+                  <IconButton
+                    icon="alignJustify"
+                    label="Rata kiri-kanan"
+                    active={selected.align === "justify"}
+                    onClick={() => onChange(selected.id, { align: "justify" })}
+                  />
+                </div>
+              </section>
               <NumberField
                 label="Kolom"
                 value={selected.columns ?? 1}
