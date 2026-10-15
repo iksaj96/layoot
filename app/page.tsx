@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import Navbar from "./components/Navbar";
 import { createServerSupabase } from "@/lib/supabase-server";
@@ -74,17 +75,43 @@ function IlustrasiKertas() {
   );
 }
 
-export default async function Home() {
+export default function Home() {
+  return (
+    <div>
+      <Suspense
+        fallback={
+          <div
+            className="h-16 border-b border-stone-200 bg-[#faf8f3]"
+            aria-hidden="true"
+          />
+        }
+      >
+        <Navbar />
+      </Suspense>
+      <Suspense
+        fallback={
+          <main className="mx-auto min-h-[60vh] max-w-6xl px-5 py-14">
+            <p>Memuat...</p>
+          </main>
+        }
+      >
+        <HomeContent />
+      </Suspense>
+      <footer className="border-t border-stone-200 py-6 text-center text-sm text-stone-500">
+        © 2026 Layoot
+      </footer>
+    </div>
+  );
+}
+
+async function HomeContent() {
   const supabase = await createServerSupabase();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   return (
-    <div>
-      <Navbar />
-
-      <main>
+    <main>
         <section className="mx-auto grid max-w-6xl items-center gap-10 px-5 py-14 md:grid-cols-2 md:py-20">
           <div>
             <span className="inline-block rounded-full bg-indigo-100 px-3 py-1 text-xs font-bold text-indigo-700">
@@ -147,11 +174,6 @@ export default async function Home() {
             </Link>
           </div>
         </section>
-      </main>
-
-      <footer className="border-t border-stone-200 py-6 text-center text-sm text-stone-500">
-        © 2026 Layoot
-      </footer>
-    </div>
+    </main>
   );
 }
