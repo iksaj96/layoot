@@ -1,21 +1,26 @@
 import { memo, useRef } from "react";
 import { DEFAULT_FONT_SIZE } from "@/lib/types";
-import type { DesignElement } from "@/lib/types";
+import type { DesignElement, TextStyleRange } from "@/lib/types";
 import { borderRadiusCss, radiusOf } from "../core/elementOps";
 import { fontCss } from "../core/fonts";
 import type { TextFlowSegment } from "../core/textFlow";
 import { PT_TO_MM } from "../core/utils";
 import type { Handle, Mode } from "../core/utils";
 import Icon from "../ui/Icon";
+import RichTextInput from "./RichTextInput";
+import { cssStyle } from "./RichTextInput";
+import { textStyleSegments } from "../core/textStyles";
 
 type Props = {
   el: DesignElement;
   scale: number;
   selected: boolean;
+  primarySelected?: boolean;
   showHandles: boolean;
   showModeHandle: boolean;
   editing: boolean;
   textFlow?: TextFlowSegment;
+  textStyles?: TextStyleRange[];
   cursor: string;
   mode: Mode;
   handleScale: number;
@@ -26,7 +31,8 @@ type Props = {
   onRotateDown: (e: React.PointerEvent, el: DesignElement) => void;
   onActivate: (id: string, clickCount: number, canCycleMode: boolean) => void;
   onCycleMode: (id: string) => void;
-  onText: (id: string, text: string) => void;
+  onText: (id: string, text: string, start: number, end: number) => void;
+  onTextSelection: (id: string, start: number, end: number) => void;
   onEditEnd: () => void;
 };
 
@@ -45,10 +51,12 @@ const ElementView = memo(function ElementView({
   el,
   scale,
   selected,
+  primarySelected = false,
   showHandles,
   showModeHandle,
   editing,
   textFlow,
+  textStyles,
   cursor,
   mode,
   handleScale,
@@ -60,6 +68,7 @@ const ElementView = memo(function ElementView({
   onActivate,
   onCycleMode,
   onText,
+  onTextSelection,
   onEditEnd,
 }: Props) {
   const isShape = el.type === "rect" || el.type === "ellipse";
@@ -117,6 +126,17 @@ const ElementView = memo(function ElementView({
     color: el.color ?? "#1c1917",
     whiteSpace: isArtisticText ? "pre" : "pre-wrap",
   };
+  const visibleText = textFlow?.text ?? el.text ?? "";
+  const visibleStyleRanges = (textStyles ?? [])
+    .map((range) => ({
+      ...range,
+      start: Math.max(0, range.start - (textFlow?.start ?? 0)),
+      end: Math.min(
+        visibleText.length,
+        range.end - (textFlow?.start ?? 0)
+      ),
+    }))
+    .filter((range) => range.end > range.start);
 
   return (
     <div
@@ -247,33 +267,25 @@ const ElementView = memo(function ElementView({
 
       {el.type === "text" &&
         (editing ? (
-          <textarea
-            data-text-editor
-            autoFocus
-            wrap={isArtisticText ? "off" : "soft"}
+          <RichTextInput
             value={textFlow?.fullText ?? el.text ?? ""}
-            onChange={(e) => onText(textFlow?.sourceId ?? el.id, e.target.value)}
+            ranges={textStyles}
+            columns={isArtisticText ? 1 : el.columns ?? 1}
+            fontScale={PT_TO_MM * scale}
             onBlur={onEditEnd}
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => {
-              e.stopPropagation();
-              if (e.key === "Escape") onEditEnd();
-            }}
-            onPointerDown={(e) => e.stopPropagation()}
-            style={{
+            baseStyle={{
               ...textStyle,
-              columnCount: 1,
+              columnCount: undefined,
+              columnGap: undefined,
               whiteSpace: isArtisticText ? "pre" : "pre-wrap",
               overflowWrap: isArtisticText ? "normal" : "break-word",
-              resize: "none",
-              border: "none",
-              outline: "none",
-              padding: 0,
-              margin: 0,
-              background: "#fff",
-              userSelect: "text",
-              WebkitUserSelect: "text",
             }}
+            onChange={(value, start, end) =>
+              onText(textFlow?.sourceId ?? el.id, value, start, end)
+            }
+            onSelectionChange={(start, end) =>
+              onTextSelection(textFlow?.sourceId ?? el.id, start, end)
+            }
           />
         ) : (
           <div
@@ -283,7 +295,19 @@ const ElementView = memo(function ElementView({
               wordBreak: isArtisticText ? "normal" : "break-word",
             }}
           >
-            {textFlow?.text ?? el.text}
+            {textStyleSegments(visibleText, visibleStyleRanges).map(
+              (segment, index) =>
+                segment.style ? (
+                  <span
+                    key={index}
+                    style={cssStyle(segment.style, PT_TO_MM * scale)}
+                  >
+                    {segment.text}
+                  </span>
+                ) : (
+                  <span key={index}>{segment.text}</span>
+                )
+            )}
           </div>
         ))}
 
@@ -306,6 +330,25 @@ const ElementView = memo(function ElementView({
       )}
       </div>
       </div>
+
+      {selected && primarySelected && (
+        <span
+          aria-label="Objek acuan seleksi"
+          title="Objek acuan seleksi"
+          style={{
+            position: "absolute",
+            right: -4,
+            top: -4,
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            background: "#4f46e5",
+            border: "1px solid #fff",
+            pointerEvents: "none",
+            zIndex: 4,
+          }}
+        />
+      )}
 
       {selected && showModeHandle && !editing && canCycleMode && (
         <button

@@ -1,4 +1,7 @@
-import { IconButton } from "../ui/Icon";
+"use client";
+
+import { useLayoutEffect, useRef } from "react";
+import Icon from "../ui/Icon";
 
 type Props = {
   total: number;
@@ -9,6 +12,9 @@ type Props = {
   onDelete: () => void;
 };
 
+const actionStyle =
+  "flex h-7 shrink-0 items-center gap-1 rounded-lg border border-stone-300 bg-white px-1.5 text-[11px] font-semibold text-stone-700 hover:bg-stone-200 sm:px-2";
+
 export default function PageStrip({
   total,
   active,
@@ -17,51 +23,80 @@ export default function PageStrip({
   onDuplicate,
   onDelete,
 }: Props) {
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const activeTabRef = useRef<HTMLButtonElement>(null);
+
+  useLayoutEffect(() => {
+    activeTabRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [active, total]);
+
   return (
-    <div className="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-t border-stone-300 bg-stone-100 px-2">
-      <IconButton
-        icon="chevronLeft"
-        label="Halaman sebelumnya"
-        disabled={active === 0}
-        onClick={() => onSelect(active - 1)}
-      />
-      <span className="shrink-0 px-1 text-xs font-semibold text-stone-700">
-        {active + 1} / {total}
-      </span>
-      <IconButton
-        icon="chevronRight"
-        label="Halaman berikutnya"
-        disabled={active === total - 1}
-        onClick={() => onSelect(active + 1)}
-      />
-
-      <span className="mx-1 h-5 w-px shrink-0 bg-stone-300" />
-
-      {Array.from({ length: total }, (_, i) => (
+    <div className="flex h-9 min-w-0 items-center gap-1 border-t border-stone-300 bg-stone-100 px-2">
+      <div className="hidden shrink-0 items-center gap-1 sm:flex">
         <button
-          key={i}
-          onClick={() => onSelect(i)}
-          className={`h-7 shrink-0 rounded-t border-b-2 px-3 text-xs font-semibold ${
-            i === active
-              ? "border-indigo-600 bg-white text-stone-900"
-              : "border-transparent text-stone-600 hover:bg-stone-200"
-          }`}
+          type="button"
+          aria-label="Halaman sebelumnya"
+          title="Halaman sebelumnya"
+          disabled={active === 0}
+          onClick={() => onSelect(active - 1)}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-stone-300 bg-white text-stone-700 hover:bg-stone-200 disabled:opacity-40"
         >
-          Halaman {i + 1}
+          <Icon name="chevronLeft" size={16} />
         </button>
-      ))}
+        <span className="shrink-0 px-1 text-xs font-semibold text-stone-700">
+          {active + 1} / {total}
+        </span>
+        <button
+          type="button"
+          aria-label="Halaman berikutnya"
+          title="Halaman berikutnya"
+          disabled={active === total - 1}
+          onClick={() => onSelect(active + 1)}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-stone-300 bg-white text-stone-700 hover:bg-stone-200 disabled:opacity-40"
+        >
+          <Icon name="chevronRight" size={16} />
+        </button>
+      </div>
 
-      <span className="mx-1 h-5 w-px shrink-0 bg-stone-300" />
+      <div
+        ref={tabsRef}
+        className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
+        style={{ scrollbarWidth: "none" }}
+      >
+        {Array.from({ length: total }, (_, i) => (
+          <button
+            key={i}
+            ref={i === active ? activeTabRef : undefined}
+            type="button"
+            aria-current={i === active ? "page" : undefined}
+            onClick={() => onSelect(i)}
+            className={`h-7 shrink-0 rounded-t border-b-2 px-3 text-xs font-semibold ${
+              i === active
+                ? "border-indigo-600 bg-white text-stone-900"
+                : "border-transparent text-stone-600 hover:bg-stone-200"
+            }`}
+          >
+            Halaman {i + 1}
+          </button>
+        ))}
+      </div>
 
-      <IconButton icon="plus" label="Tambah halaman" onClick={onAdd} />
-      <IconButton icon="copy" label="Duplikat halaman" onClick={onDuplicate} />
-      <IconButton
-        icon="trash"
-        label="Hapus halaman"
-        danger
+      <button type="button" title="Tambah halaman" aria-label="Tambah halaman" onClick={onAdd} className={actionStyle}>
+        <Icon name="plus" size={14} />
+      </button>
+      <button type="button" title="Duplikat halaman" aria-label="Duplikat halaman" onClick={onDuplicate} className={actionStyle}>
+        <Icon name="copy" size={14} />
+      </button>
+      <button
+        type="button"
+        title="Hapus halaman"
+        aria-label="Hapus halaman"
         disabled={total <= 1}
         onClick={onDelete}
-      />
+        className={`${actionStyle} border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-40`}
+      >
+        <Icon name="trash" size={14} />
+      </button>
     </div>
   );
 }

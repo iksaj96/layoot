@@ -12,6 +12,7 @@ type Props = {
   onChange: (warna: string) => void;
   allowNone?: boolean; // tampilkan tombol "Tanpa isi"
   allowNoneLabel?: string; // tampilkan tombol "Tanpa isi"
+  keepTextSelection?: boolean;
 };
 
 const CATUR =
@@ -54,6 +55,7 @@ export default function ColorPicker({
   onChange,
   allowNone,
   allowNoneLabel = "Tanpa isi (transparan)",
+  keepTextSelection = false,
 }: Props) {
   const tombol = useRef<HTMLButtonElement>(null);
   const kotak = useRef<HTMLDivElement>(null);
@@ -63,6 +65,14 @@ export default function ColorPicker({
     hexToHsv(isHex(value) ? value : "#ffffff")
   );
   const [draf, setDraf] = useState(isHex(value) ? value : "");
+  const nilaiHex = isHex(value) ? value.toLowerCase() : null;
+  const [nilaiHexSebelumnya, setNilaiHexSebelumnya] = useState(nilaiHex);
+
+  if (nilaiHex && nilaiHex !== nilaiHexSebelumnya) {
+    setNilaiHexSebelumnya(nilaiHex);
+    setHsv(hexToHsv(nilaiHex));
+    setDraf(nilaiHex);
+  }
 
   const aturPosisi = useCallback(() => {
     const tombolAktif = tombol.current;
@@ -85,14 +95,6 @@ export default function ColorPicker({
       top,
     });
   }, []);
-
-  // Sinkronkan bila warna berubah dari luar (mis. ganti objek terpilih)
-  useEffect(() => {
-    if (isHex(value)) {
-      setHsv((h) => (hsvToHex(h) === value.toLowerCase() ? h : hexToHsv(value)));
-      setDraf(value);
-    }
-  }, [value]);
 
   // Tutup saat klik di luar atau tekan Esc
   useEffect(() => {
@@ -180,6 +182,7 @@ export default function ColorPicker({
           <div
             ref={kotak}
             role="dialog"
+            data-text-format={keepTextSelection ? "" : undefined}
             aria-label={`Pilih ${label.toLowerCase()}`}
             className="select-none overflow-y-auto rounded-lg border border-stone-300 bg-white p-3 shadow-xl"
             style={{

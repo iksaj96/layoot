@@ -26,6 +26,12 @@ Jalankan isi [`supabase/migrations/20261015000000_profiles_and_images.sql`](./su
 
 Sesudah migrasi, unggahan gambar melalui pustaka, toolbar, maupun drag-and-drop menyimpan metadata pemilik ke tabel `public.images`. Pustaka hanya menampilkan gambar milik akun yang sedang masuk.
 
+## Dashboard admin
+
+Buka `/admin` secara langsung dan masuk menggunakan akun Supabase `aji@layoot.com`. Dashboard menyediakan ringkasan, daftar saran dan laporan masalah, serta manajemen akun pengguna. Tidak ada tautan dashboard admin di navigasi publik.
+
+Jalankan [`supabase/migrations/20261016010000_admin_dashboard.sql`](./supabase/migrations/20261016010000_admin_dashboard.sql) setelah migrasi profil dan laporan masukan. Kebijakan RLS membatasi pembacaan seluruh profil dan laporan masukan ke email admin tersebut; akun pengguna lain tetap hanya dapat membaca datanya sendiri.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

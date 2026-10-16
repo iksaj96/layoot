@@ -16,6 +16,20 @@ export type ElementType = "text" | "rect" | "ellipse" | "image" | "line";
 
 export type ElementCrop = { x: number; y: number; w: number; h: number };
 
+export type InlineTextStyle = {
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  color?: string;
+  fontSize?: number;
+};
+
+export type TextStyleRange = {
+  start: number;
+  end: number;
+  style: InlineTextStyle;
+};
+
 export type DesignElement = {
   id: string;
   type: ElementType;
@@ -26,6 +40,7 @@ export type DesignElement = {
   text?: string;
   textKind?: "artistic" | "paragraph";
   textAutoHeight?: boolean;
+  textStyles?: TextStyleRange[];
   fontFamily?: string; // nama font, mis. "Times New Roman"
   fontSize?: number; // pt
   bold?: boolean;

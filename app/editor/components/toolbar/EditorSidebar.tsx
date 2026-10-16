@@ -21,10 +21,13 @@ type Props = {
   mode: Mode;
   textBoxOptions: { id: string; label: string }[];
   onChange: (id: string, patch: Partial<DesignElement>) => void;
+  onFormatText: (id: string, patch: Partial<DesignElement>) => void;
   onLinkText: (id: string, nextId: string | undefined) => void;
   onLayer: (op: LayerOp) => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  onCopy: () => void;
+  onCut: () => void;
   onFillImage: (img: UploadedImage) => void;
   onError: (message: string) => void;
   elements: DesignElement[];
@@ -50,10 +53,13 @@ export default function EditorSidebar({
   mode,
   textBoxOptions,
   onChange,
+  onFormatText,
   onLinkText,
   onLayer,
   onDuplicate,
   onDelete,
+  onCopy,
+  onCut,
   onFillImage,
   onError,
   elements,
@@ -89,13 +95,17 @@ export default function EditorSidebar({
       {tab === "properties" ? (
         <PropertiesPanel
           selected={selected}
+          selectedElements={selectedElements}
           mode={mode}
           textBoxOptions={textBoxOptions}
           onChange={onChange}
+          onFormatText={onFormatText}
           onLinkText={onLinkText}
           onLayer={onLayer}
           onDuplicate={onDuplicate}
           onDelete={onDelete}
+          onCopy={onCopy}
+          onCut={onCut}
           onFillImage={onFillImage}
           onError={onError}
         />

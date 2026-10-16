@@ -62,6 +62,14 @@ function PageContent({
     () => calculateTextFlow(page?.elements ?? [], fontsReady),
     [fontsReady, page?.elements]
   );
+  const textStylesById = useMemo(() => {
+    const elements = page?.elements ?? [];
+    return Object.fromEntries(
+      elements
+        .filter((el) => el.type === "text")
+        .map((el) => [el.id, el.textStyles])
+    );
+  }, [page?.elements]);
   if (!page) return null;
 
   return (
@@ -82,6 +90,7 @@ function PageContent({
           el={el}
           scale={PX_PER_MM}
           selected={false}
+          textStyles={textStylesById[textFlow[el.id]?.sourceId ?? el.id]}
           showHandles={false}
           showModeHandle={false}
           editing={false}
@@ -97,6 +106,7 @@ function PageContent({
           onActivate={() => {}}
           onCycleMode={() => {}}
           onText={() => {}}
+          onTextSelection={() => {}}
           onEditEnd={() => {}}
         />
       ))}
@@ -116,8 +126,6 @@ function isPageEmpty(page: DesignPage | null) {
 function Face({
   side,
   page,
-  num,
-  showNumber,
   render,
   baseWidth,
   baseHeight,
@@ -127,8 +135,6 @@ function Face({
 }: {
   side: "front" | "back";
   page: DesignPage | null;
-  num: number | null;
-  showNumber: boolean;
   render: boolean;
   baseWidth: number;
   baseHeight: number;
@@ -195,26 +201,8 @@ function Face({
           }}
         >
           <span style={{ fontWeight: 600 }}>Halaman kosong</span>
-          <span style={{ fontSize: fontSize * 0.8 }}>
-            {num ? `Halaman ${num}` : "Pelengkap lembar"}
-          </span>
+          <span style={{ fontSize: fontSize * 0.8 }}>Tidak ada isi</span>
         </div>
-      )}
-
-      {/* Nomor halaman di sudut luar */}
-      {!empty && showNumber && num !== null && (
-        <span
-          style={{
-            position: "absolute",
-            bottom: pageW * 0.03,
-            [isFront ? "right" : "left"]: pageW * 0.05,
-            fontSize: fontSize * 0.8,
-            color: "#78716c",
-            pointerEvents: "none",
-          }}
-        >
-          {num}
-        </span>
       )}
 
       <div style={gutter} />
@@ -293,17 +281,27 @@ export default function BookPreview({ design }: { design: EditorDesign }) {
     return list;
   }, [pages]);
 
-  // Nomor halaman hanya ditampilkan di halaman dalam, bukan di sampul
-  const isInnerPage = (num: number | null | undefined) =>
-    num != null && num !== 1 && num !== pages.length;
-
   // Setiap lembar kertas punya 2 sisi: depan = leaf 2k, belakang = leaf 2k+1
   const sheetCount = Math.ceil(leaves.length / 2);
 
   const [stageRef, stage] = useElementSize<HTMLDivElement>();
   const [nav, setNav] = useState({ from: 0, to: 0 });
   const [moving, setMoving] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const drag = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
+  const dragged = useRef(false);
+  const pinch = useRef<{
+    distance: number;
+    zoom: number;
+    midpointX: number;
+    midpointY: number;
+    panX: number;
+    panY: number;
+  } | null>(null);
+  const pinched = useRef(false);
+  const touchPan = useRef<{ x: number; y: number } | null>(null);
 
   const flipped = nav.to; // jumlah lembar yang sudah dibalik ke kiri
   const forward = nav.to > nav.from;
@@ -318,8 +316,30 @@ export default function BookPreview({ design }: { design: EditorDesign }) {
     availW && availH
       ? Math.min(availW / (base.width * 2), availH / base.height, 1.5)
       : 0;
-  const W = base.width * scale;
-  const H = base.height * scale;
+  const displayScale = scale * zoom;
+  const W = base.width * displayScale;
+  const H = base.height * displayScale;
+
+  const zoomBy = useCallback(
+    (factor: number, clientX?: number, clientY?: number) => {
+      const next = Math.max(0.25, Math.min(4, Math.round(zoom * factor * 100) / 100));
+      if (next === zoom) return;
+      const bounds = stageRef.current?.getBoundingClientRect();
+      const x = bounds && clientX !== undefined
+        ? clientX - bounds.left - bounds.width / 2
+        : 0;
+      const y = bounds && clientY !== undefined
+        ? clientY - bounds.top - bounds.height / 2
+        : 0;
+      const ratio = next / zoom;
+      setPan((current) => ({
+        x: x - (x - current.x) * ratio,
+        y: y - (y - current.y) * ratio,
+      }));
+      setZoom(next);
+    },
+    [stageRef, zoom]
+  );
 
   /* ----- navigasi ----- */
   const goTo = useCallback(
@@ -354,6 +374,11 @@ export default function BookPreview({ design }: { design: EditorDesign }) {
 
   /* ----- klik & geser ----- */
   const onBookClick = (e: MouseEvent<HTMLDivElement>) => {
+    if (dragged.current || pinched.current) {
+      dragged.current = false;
+      pinched.current = false;
+      return;
+    }
     if (isClosedFront) return next();
     if (isClosedBack) return prev();
     const rect = e.currentTarget.getBoundingClientRect();
@@ -363,9 +388,83 @@ export default function BookPreview({ design }: { design: EditorDesign }) {
 
   const touchStartX = useRef<number | null>(null);
   const onTouchStart = (e: TouchEvent) => {
-    touchStartX.current = e.touches[0].clientX;
+    if (e.touches.length >= 2) {
+      const [a, b] = [e.touches[0], e.touches[1]];
+      const bounds = stageRef.current?.getBoundingClientRect();
+      pinch.current = {
+        distance: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY),
+        zoom,
+        midpointX: (a.clientX + b.clientX) / 2 - (bounds?.left ?? 0) - (bounds?.width ?? 0) / 2,
+        midpointY: (a.clientY + b.clientY) / 2 - (bounds?.top ?? 0) - (bounds?.height ?? 0) / 2,
+        panX: pan.x,
+        panY: pan.y,
+      };
+      pinched.current = true;
+      touchPan.current = null;
+      touchStartX.current = null;
+    } else {
+      if (zoom > 1) {
+        touchPan.current = {
+          x: e.touches[0].clientX,
+          y: e.touches[0].clientY,
+        };
+        touchStartX.current = null;
+      } else {
+        touchStartX.current = e.touches[0].clientX;
+      }
+    }
+  };
+  const onTouchMove = (e: TouchEvent) => {
+    const initial = pinch.current;
+    if (initial && e.touches.length >= 2) {
+      e.preventDefault();
+      const [a, b] = [e.touches[0], e.touches[1]];
+      const distance = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+      const next = Math.max(
+        0.25,
+        Math.min(4, Math.round(initial.zoom * distance / Math.max(initial.distance, 1) * 100) / 100)
+      );
+      const bounds = stageRef.current?.getBoundingClientRect();
+      const midpointX =
+        (a.clientX + b.clientX) / 2 - (bounds?.left ?? 0) - (bounds?.width ?? 0) / 2;
+      const midpointY =
+        (a.clientY + b.clientY) / 2 - (bounds?.top ?? 0) - (bounds?.height ?? 0) / 2;
+      const ratio = next / initial.zoom;
+      setPan({
+        x: midpointX - (initial.midpointX - initial.panX) * ratio,
+        y: midpointY - (initial.midpointY - initial.panY) * ratio,
+      });
+      setZoom(next);
+      return;
+    }
+    const previous = touchPan.current;
+    if (!previous || e.touches.length !== 1) return;
+    e.preventDefault();
+    const touch = e.touches[0];
+    setPan((current) => ({
+      x: current.x + touch.clientX - previous.x,
+      y: current.y + touch.clientY - previous.y,
+    }));
+    touchPan.current = { x: touch.clientX, y: touch.clientY };
+    dragged.current = true;
   };
   const onTouchEnd = (e: TouchEvent) => {
+    if (pinch.current) {
+      if (e.touches.length < 2) {
+        pinch.current = null;
+        window.setTimeout(() => {
+          pinched.current = false;
+        }, 600);
+      }
+      return;
+    }
+    if (touchPan.current) {
+      touchPan.current = null;
+      window.setTimeout(() => {
+        dragged.current = false;
+      }, 600);
+      return;
+    }
     if (touchStartX.current === null) return;
     const dx = e.changedTouches[0].clientX - touchStartX.current;
     touchStartX.current = null;
@@ -393,7 +492,7 @@ export default function BookPreview({ design }: { design: EditorDesign }) {
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-gradient-to-b from-stone-800 via-stone-900 to-stone-950 text-stone-100">
       {/* Bilah atas */}
-      <header className="flex items-center justify-between gap-4 px-4 py-3 sm:px-6">
+      <header className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6">
         <button
           type="button"
           onClick={() => router.back()}
@@ -404,7 +503,43 @@ export default function BookPreview({ design }: { design: EditorDesign }) {
         <h1 className="truncate text-sm font-medium text-stone-200 sm:text-base">
           {design.title || "Tanpa judul"}
         </h1>
-        <span className="w-16" aria-hidden="true" />
+        <div className="flex shrink-0 items-center gap-1 rounded-full bg-white/5 px-2 py-1">
+          <button
+            type="button"
+            aria-label="Perkecil preview"
+            title="Perkecil"
+            disabled={zoom <= 0.25}
+            onClick={() => zoomBy(1 / 1.2)}
+            className="rounded-full p-1.5 text-stone-200 hover:bg-white/10 disabled:opacity-40"
+          >
+            −
+          </button>
+          <span className="min-w-12 text-center text-xs tabular-nums text-stone-200">
+            {Math.round(zoom * 100)}%
+          </span>
+          <button
+            type="button"
+            aria-label="Perbesar preview"
+            title="Perbesar"
+            disabled={zoom >= 4}
+            onClick={() => zoomBy(1.2)}
+            className="rounded-full p-1.5 text-stone-200 hover:bg-white/10 disabled:opacity-40"
+          >
+            +
+          </button>
+          <button
+            type="button"
+            aria-label="Muat preview ke layar"
+            title="Muat ke layar"
+            onClick={() => {
+              setZoom(1);
+              setPan({ x: 0, y: 0 });
+            }}
+            className="rounded-full px-2 py-1.5 text-xs text-stone-200 hover:bg-white/10"
+          >
+            Muat
+          </button>
+        </div>
       </header>
 
       {/* Panggung */}
@@ -412,7 +547,45 @@ export default function BookPreview({ design }: { design: EditorDesign }) {
         ref={stageRef}
         className="relative min-h-0 flex-1 overflow-hidden"
         onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
+        onWheel={(event) => {
+          if (!event.ctrlKey && !event.metaKey) return;
+          event.preventDefault();
+          zoomBy(Math.exp(-event.deltaY * 0.002), event.clientX, event.clientY);
+        }}
+        onPointerDown={(event) => {
+          if (
+            zoom <= 1 ||
+            event.button !== 0 ||
+            event.pointerType === "touch" ||
+            (event.target as HTMLElement).closest("button")
+          ) {
+            return;
+          }
+          drag.current = {
+            x: event.clientX,
+            y: event.clientY,
+            panX: pan.x,
+            panY: pan.y,
+          };
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }}
+        onPointerMove={(event) => {
+          const start = drag.current;
+          if (!start) return;
+          const dx = event.clientX - start.x;
+          const dy = event.clientY - start.y;
+          if (Math.hypot(dx, dy) > 3) dragged.current = true;
+          setPan({ x: start.panX + dx, y: start.panY + dy });
+        }}
+        onPointerUp={() => {
+          drag.current = null;
+        }}
+        onPointerCancel={() => {
+          drag.current = null;
+        }}
+        style={{ touchAction: "none" }}
       >
         {pages.length === 0 ? (
           <p className="absolute inset-0 flex items-center justify-center text-stone-400">
@@ -430,8 +603,8 @@ export default function BookPreview({ design }: { design: EditorDesign }) {
                 marginLeft: -W,
                 marginTop: -H / 2,
                 perspective: Math.max(W * 3.5, 1200),
-                transform: `translateX(${shiftX}px)`,
-                transition: `transform ${FLIP_MS}ms ${ease}`,
+                transform: `translate(${pan.x + shiftX}px, ${pan.y}px)`,
+                transition: moving ? `transform ${FLIP_MS}ms ${ease}` : "none",
                 cursor: "pointer",
               }}
               onClick={onBookClick}
@@ -501,8 +674,6 @@ export default function BookPreview({ design }: { design: EditorDesign }) {
                       <Face
                         side="front"
                         page={leaves[k * 2]?.page ?? null}
-                        num={leaves[k * 2]?.num ?? null}
-                        showNumber={isInnerPage(leaves[k * 2]?.num)}
                         render={render}
                         baseWidth={base.width}
                         baseHeight={base.height}
@@ -513,8 +684,6 @@ export default function BookPreview({ design }: { design: EditorDesign }) {
                       <Face
                         side="back"
                         page={leaves[k * 2 + 1]?.page ?? null}
-                        num={leaves[k * 2 + 1]?.num ?? null}
-                        showNumber={isInnerPage(leaves[k * 2 + 1]?.num)}
                         render={render}
                         baseWidth={base.width}
                         baseHeight={base.height}

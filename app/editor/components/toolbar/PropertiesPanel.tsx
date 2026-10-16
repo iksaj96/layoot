@@ -15,13 +15,17 @@ import type { UploadedImage } from "./ImageUpload";
 
 type Props = {
   selected: DesignElement | null;
+  selectedElements: DesignElement[];
   mode: Mode;
   textBoxOptions: { id: string; label: string }[];
   onChange: (id: string, patch: Partial<DesignElement>) => void;
+  onFormatText: (id: string, patch: Partial<DesignElement>) => void;
   onLinkText: (id: string, nextId: string | undefined) => void;
   onLayer: (op: LayerOp) => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  onCopy: () => void;
+  onCut: () => void;
   onFillImage: (img: UploadedImage) => void;
   onError: (pesan: string) => void;
 };
@@ -32,19 +36,41 @@ function Sekat() {
 
 export default function PropertiesPanel({
   selected,
+  selectedElements,
   mode,
   textBoxOptions,
   onChange,
+  onFormatText,
   onLinkText,
   onLayer,
   onDuplicate,
   onDelete,
+  onCopy,
+  onCut,
   onFillImage,
   onError,
 }: Props) {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3">
-      {!selected ? (
+      {selectedElements.length > 1 ? (
+        <>
+          <p className="text-xs font-semibold text-stone-700">
+            {selectedElements.length} objek dipilih. Pindahkan, ubah ukuran, atau putar
+            melalui bingkai seleksi.
+          </p>
+          <section className="flex flex-wrap items-center gap-1 border-t border-stone-200 pt-2">
+            <span className="w-full text-xs font-bold text-stone-600">Susunan & aksi</span>
+            <IconButton icon="toFront" label="Ke paling atas" shortcut="Shift+PgUp" onClick={() => onLayer("atas")} />
+            <IconButton icon="arrowUp" label="Naikkan satu lapisan" shortcut="Ctrl/Cmd+]" onClick={() => onLayer("naik")} />
+            <IconButton icon="arrowDown" label="Turunkan satu lapisan" shortcut="Ctrl/Cmd+[" onClick={() => onLayer("turun")} />
+            <IconButton icon="toBack" label="Ke paling bawah" shortcut="Shift+PgDn" onClick={() => onLayer("bawah")} />
+            <IconButton icon="copy" label="Salin" shortcut="Ctrl/Cmd+C" onClick={onCopy} />
+            <button type="button" onClick={onCut} className="rounded px-2 py-1 text-xs font-semibold text-stone-700 hover:bg-stone-200">Potong</button>
+            <IconButton icon="copy" label="Duplikat" shortcut="Ctrl/Cmd+D" onClick={onDuplicate} />
+            <IconButton icon="trash" label="Hapus" shortcut="Del" danger onClick={onDelete} />
+          </section>
+        </>
+      ) : !selected ? (
         <p className="text-xs text-stone-600">
           Pilih satu objek untuk mengubah posisi, ukuran, warna, dan tampilannya.
         </p>
@@ -107,13 +133,16 @@ export default function PropertiesPanel({
           {/* ---------- Teks ---------- */}
           {selected.type === "text" && (
             <>
-              <section className="flex w-full flex-col gap-2">
+              <section
+                data-text-format
+                className="flex w-full flex-col gap-2"
+              >
                 <span className="text-xs font-bold text-stone-600">Teks</span>
                 <div className="flex flex-wrap items-center gap-1.5">
                   <FontSelect
                     value={selected.fontFamily}
                     onChange={(nama) =>
-                      onChange(selected.id, { fontFamily: nama || undefined })
+                      onFormatText(selected.id, { fontFamily: nama || undefined })
                     }
                   />
                   <NumberField
@@ -122,7 +151,7 @@ export default function PropertiesPanel({
                     min={4}
                     step={1}
                     width="w-14"
-                    onChange={(v) => onChange(selected.id, { fontSize: v })}
+                    onChange={(v) => onFormatText(selected.id, { fontSize: v })}
                   />
                 </div>
                 <div className="flex flex-wrap items-center gap-1">
@@ -131,14 +160,14 @@ export default function PropertiesPanel({
                     label="Tebal"
                     shortcut="Ctrl/Cmd+B"
                     active={!!selected.bold}
-                    onClick={() => onChange(selected.id, { bold: !selected.bold })}
+                    onClick={() => onFormatText(selected.id, { bold: !selected.bold })}
                   />
                   <IconButton
                     icon="italic"
                     label="Miring"
                     shortcut="Ctrl/Cmd+I"
                     active={!!selected.italic}
-                    onClick={() => onChange(selected.id, { italic: !selected.italic })}
+                    onClick={() => onFormatText(selected.id, { italic: !selected.italic })}
                   />
                   <IconButton
                     icon="underline"
@@ -146,7 +175,7 @@ export default function PropertiesPanel({
                     shortcut="Ctrl/Cmd+U"
                     active={!!selected.underline}
                     onClick={() =>
-                      onChange(selected.id, { underline: !selected.underline })
+                      onFormatText(selected.id, { underline: !selected.underline })
                     }
                   />
                   <IconButton
@@ -204,11 +233,14 @@ export default function PropertiesPanel({
                   </select>
                 </label>
               )}
-              <ColorPicker
-                label="Warna teks"
-                value={selected.color ?? "#1c1917"}
-                onChange={(c) => onChange(selected.id, { color: c })}
-              />
+              <div data-text-format>
+                <ColorPicker
+                  label="Warna teks"
+                  value={selected.color ?? "#1c1917"}
+                  keepTextSelection
+                  onChange={(c) => onFormatText(selected.id, { color: c })}
+                />
+              </div>
               <Sekat />
             </>
           )}
@@ -352,6 +384,8 @@ export default function PropertiesPanel({
             <IconButton icon="arrowDown" label="Turunkan satu lapisan" shortcut="Ctrl/Cmd+[" onClick={() => onLayer("turun")} />
             <IconButton icon="toBack" label="Ke paling bawah" shortcut="Shift+PgDn" onClick={() => onLayer("bawah")} />
             <IconButton icon="copy" label="Duplikat" shortcut="Ctrl/Cmd+D" onClick={onDuplicate} />
+            <IconButton icon="copy" label="Salin" shortcut="Ctrl/Cmd+C" onClick={onCopy} />
+            <button type="button" onClick={onCut} className="rounded px-2 py-1 text-xs font-semibold text-stone-700 hover:bg-stone-200">Potong</button>
             <IconButton icon="trash" label="Hapus" shortcut="Del" danger onClick={onDelete} />
           </section>
         </>

@@ -5,7 +5,13 @@ import Link from "next/link";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase";
 import { DEFAULT_FONT_SIZE, PAPER_OPTIONS, PAPER_SIZE_MM } from "@/lib/types";
-import type { DesignElement, DesignPage, EditorDesign, Paper } from "@/lib/types";
+import type {
+  DesignElement,
+  DesignPage,
+  EditorDesign,
+  InlineTextStyle,
+  Paper,
+} from "@/lib/types";
 import Canvas from "./canvas/Canvas";
 import ExportPdf from "./export/ExportPdf";
 import PageStrip from "./panels/PageStrip";
@@ -20,9 +26,15 @@ import { uploadImageFile } from "./toolbar/ImageUpload";
 import type { ImageAsset, UploadedImage } from "./toolbar/ImageUpload";
 import Icon from "./ui/Icon";
 import type { IconName } from "./ui/Icon";
-import { cloneElement, moveLayer, ubahElemen } from "./core/elementOps";
+import { moveLayers, ubahElemen } from "./core/elementOps";
 import type { LayerOp } from "./core/elementOps";
+import { elementBounds, selectionBounds } from "./core/geometry";
 import { calculateTextFlow, calculateTextHeightMm } from "./core/textFlow";
+import {
+  applyTextStyle,
+  remapTextStyles,
+  textStyleAt,
+} from "./core/textStyles";
 import { measureTextWidthMm } from "./core/textMetrics";
 import {
   LABEL_STATUS,
@@ -142,15 +154,29 @@ export default function Editor({ design }: { design: EditorDesign }) {
     getServerFontsSnapshot
   );
 
-  const papan = useRef<DesignElement | null>(null);
-  const geserTempel = useRef(0);
+  const papan = useRef<DesignElement[] | null>(null);
   const sesiEditTeks = useRef(0);
+  const seleksiTeks = useRef<{
+    id: string | null;
+    start: number;
+    end: number;
+    pending: InlineTextStyle;
+  }>({ id: null, start: 0, end: 0, pending: {} });
 
   // Undo bisa mengurangi jumlah halaman, jadi indeks aktif dijaga di batas
   const hal = Math.min(active, pages.length - 1);
   const elements = pages[hal]?.elements ?? ELEMEN_KOSONG;
   const selected = elements.find((e) => e.id === selectedId) ?? null;
   const selectedElements = elements.filter((el) => selectedIds.includes(el.id));
+  const textStylesById = useMemo(
+    () =>
+      Object.fromEntries(
+        elements
+          .filter((el) => el.type === "text")
+          .map((el) => [el.id, el.textStyles])
+      ),
+    [elements]
+  );
   const textFlow = useMemo(
     () =>
       calculateTextFlow(
@@ -442,8 +468,24 @@ export default function Editor({ design }: { design: EditorDesign }) {
     setPesan("");
   }, [selectedIds]);
 
+  const pilihBanyak = useCallback(
+    (ids: string[], additive: boolean) => {
+      const next = additive
+        ? [...selectedIds, ...ids.filter((id) => !selectedIds.includes(id))]
+        : ids;
+      setSelectedIds(next);
+      setSelectedId(next.at(-1) ?? null);
+      setMode("ukuran");
+      setPesan("");
+    },
+    [selectedIds]
+  );
+
   function aturEditing(id: string | null) {
-    if (id && id !== editingId) sesiEditTeks.current += 1;
+    if (id && id !== editingId) {
+      sesiEditTeks.current += 1;
+      seleksiTeks.current = { id, start: 0, end: 0, pending: {} };
+    }
     setEditingId(id);
   }
 
@@ -522,6 +564,136 @@ export default function Editor({ design }: { design: EditorDesign }) {
       );
     },
     [editingId, elements, hal, setPages]
+  );
+
+  const updateMany = useCallback(
+    (
+      updates: Record<string, Partial<DesignElement>>,
+      historyKey: string,
+      mergePermanently = false
+    ) => {
+      const patches = new Map(Object.entries(updates));
+      setPages(
+        (prev) =>
+          ubahElemen(prev, hal, (els) =>
+            els.map((el) => {
+              const patch = patches.get(el.id);
+              return patch ? { ...el, ...patch } : el;
+            })
+          ),
+        historyKey,
+        mergePermanently
+      );
+    },
+    [hal, setPages]
+  );
+
+  const onTextChange = useCallback(
+    (id: string, text: string, start: number, end: number) => {
+      const element = elements.find((item) => item.id === id);
+      if (!element) return;
+      const previousText = element.text ?? "";
+      const ranges = remapTextStyles(element.textStyles, previousText, text);
+      let prefix = 0;
+      while (
+        prefix < previousText.length &&
+        prefix < text.length &&
+        previousText[prefix] === text[prefix]
+      ) {
+        prefix += 1;
+      }
+      let suffix = 0;
+      while (
+        suffix < previousText.length - prefix &&
+        suffix < text.length - prefix &&
+        previousText[previousText.length - 1 - suffix] ===
+          text[text.length - 1 - suffix]
+      ) {
+        suffix += 1;
+      }
+      const insertedEnd = text.length - suffix;
+      const pending =
+        seleksiTeks.current.id === id ? seleksiTeks.current.pending : {};
+      const styledRanges =
+        insertedEnd > prefix && Object.keys(pending).length
+          ? applyTextStyle(ranges, prefix, insertedEnd, pending)
+          : ranges;
+      seleksiTeks.current = { id, start, end, pending };
+      updateElement(id, { text, textStyles: styledRanges });
+    },
+    [elements, updateElement]
+  );
+
+  const onTextSelection = useCallback(
+    (id: string, start: number, end: number) => {
+      const current =
+        seleksiTeks.current.id === id
+          ? seleksiTeks.current
+          : { id, start: 0, end: 0, pending: {} };
+      seleksiTeks.current = { ...current, start, end };
+    },
+    []
+  );
+
+  const formatText = useCallback(
+    (id: string, patch: Partial<DesignElement>) => {
+      const rangeId =
+        editingId === id && seleksiTeks.current.id
+          ? seleksiTeks.current.id
+          : id;
+      const element = elements.find((item) => item.id === rangeId);
+      if (!element || element.type !== "text") return;
+      const format: InlineTextStyle = {};
+      if (patch.bold !== undefined) format.bold = patch.bold;
+      if (patch.italic !== undefined) format.italic = patch.italic;
+      if (patch.underline !== undefined) format.underline = patch.underline;
+      if (patch.color !== undefined) format.color = patch.color;
+      if (patch.fontSize !== undefined) format.fontSize = patch.fontSize;
+      if (Object.keys(format).length === 0) {
+        updateElement(id, patch);
+        return;
+      }
+
+      if (editingId === id && seleksiTeks.current.id === rangeId) {
+        const { start, end, pending } = seleksiTeks.current;
+        if (start < end) {
+          const current = textStyleAt(element.textStyles, start);
+          for (const key of ["bold", "italic", "underline"] as const) {
+            if (format[key] !== undefined) {
+              const effective = current[key] ?? element[key] ?? false;
+              if (format[key] === effective) format[key] = !effective;
+            }
+          }
+          const textStyles = applyTextStyle(
+            element.textStyles,
+            start,
+            end,
+            format
+          );
+          seleksiTeks.current = {
+            ...seleksiTeks.current,
+            pending: { ...pending, ...format },
+          };
+          updateElement(rangeId, { textStyles });
+          return;
+        }
+
+        for (const key of ["bold", "italic", "underline"] as const) {
+          if (format[key] !== undefined) {
+            const effective = pending[key] ?? element[key] ?? false;
+            if (format[key] === effective) format[key] = !effective;
+          }
+        }
+        seleksiTeks.current = {
+          ...seleksiTeks.current,
+          pending: { ...pending, ...format },
+        };
+        return;
+      }
+
+      updateElement(id, patch);
+    },
+    [editingId, elements, updateElement]
   );
 
   const tambahElemen = useCallback(
@@ -605,29 +777,71 @@ export default function Editor({ design }: { design: EditorDesign }) {
   }
 
   function hapus() {
-    if (!selectedId) return;
-    const removed = elements.find((el) => el.id === selectedId);
-    const predecessor = textBoxes.find((el) => el.nextTextBoxId === selectedId);
-    const successorId = removed?.type === "text" ? removed.nextTextBoxId : undefined;
-    const remainingText =
-      successorId && removed
-        ? (textFlow[successorId]?.fullText ?? removed.text ?? "").slice(
-            textFlow[successorId]?.start ?? 0
-          )
-        : undefined;
+    const removedIds = new Set(
+      selectedIds.length ? selectedIds : selectedId ? [selectedId] : []
+    );
+    if (removedIds.size === 0) return;
+
+    const selectedTextIds = new Set(
+      elements
+        .filter((el) => removedIds.has(el.id) && el.type === "text")
+        .map((el) => el.id)
+    );
+    const incoming = new Set(
+      textBoxes
+        .map((el) => el.nextTextBoxId)
+        .filter((id): id is string => !!id)
+    );
+    const chainUpdates = new Map<
+      string,
+      { nextTextBoxId?: string; text?: string; textStyles?: DesignElement["textStyles"] }
+    >();
+
+    for (const root of textBoxes.filter((el) => !incoming.has(el.id))) {
+      const chain: DesignElement[] = [];
+      const visited = new Set<string>();
+      let current: DesignElement | undefined = root;
+      while (current && !visited.has(current.id)) {
+        visited.add(current.id);
+        chain.push(current);
+        current = textBoxes.find((el) => el.id === current?.nextTextBoxId);
+      }
+      if (!chain.some((el) => selectedTextIds.has(el.id))) continue;
+      const remaining = chain.filter((el) => !selectedTextIds.has(el.id));
+      if (remaining.length === 0) continue;
+
+      const textFlowRoot = textFlow[root.id];
+      const fullText = textFlowRoot?.fullText ?? root.text ?? "";
+      const rootWasRemoved = selectedTextIds.has(root.id);
+      const first = remaining[0];
+      if (rootWasRemoved) {
+        const start = textFlow[first.id]?.start ?? 0;
+        chainUpdates.set(first.id, {
+          text: fullText.slice(start),
+          textStyles: (root.textStyles ?? [])
+            .filter((range) => range.end > start)
+            .map((range) => ({
+              ...range,
+              start: Math.max(0, range.start - start),
+              end: range.end - start,
+            })),
+        });
+      }
+      remaining.forEach((el, index) => {
+        const update = chainUpdates.get(el.id) ?? {};
+        update.nextTextBoxId = remaining[index + 1]?.id;
+        chainUpdates.set(el.id, update);
+      });
+    }
 
     setPages((prev) =>
       ubahElemen(prev, hal, (els) => {
-        const filtered = els.filter((el) => el.id !== selectedId);
-        return filtered.map((el) => {
-          if (predecessor && el.id === predecessor.id) {
-            return { ...el, nextTextBoxId: successorId };
-          }
-          if (!predecessor && successorId && el.id === successorId) {
-            return { ...el, text: remainingText };
-          }
-          return el;
-        });
+        return els
+          .filter((el) => !removedIds.has(el.id))
+          .map((el) => {
+            const update = chainUpdates.get(el.id);
+            return update ? { ...el, ...update } : el;
+          });
       })
     );
     setSelectedId(null);
@@ -637,33 +851,70 @@ export default function Editor({ design }: { design: EditorDesign }) {
   }
 
   function salin() {
-    if (!selected) return;
-    papan.current = selected;
-    geserTempel.current = 0;
+    const ids = new Set(selectedIds.length ? selectedIds : selected ? [selected.id] : []);
+    if (!ids.size) return;
+    papan.current = elements.filter((el) => ids.has(el.id)).map((el) => ({
+      ...el,
+      textStyles: el.textStyles?.map((range) => ({
+        ...range,
+        style: { ...range.style },
+      })),
+    }));
   }
 
   function potong() {
-    if (!selected) return;
+    if (selectedIds.length === 0 && !selected) return;
     salin();
     hapus();
   }
 
   function tempel() {
     const src = papan.current;
-    if (!src) return;
-    geserTempel.current += 1;
-    const d = 5 * geserTempel.current;
-    tambahElemen({
-      ...src,
-      id: uid(),
-      x: round(src.x + d),
-      y: round(src.y + d),
-      nextTextBoxId: undefined,
-    });
+    if (!src?.length) return;
+    const idMap = new Map(src.map((el) => [el.id, uid()]));
+    const salinan = src.map((el) => ({
+      ...el,
+      id: idMap.get(el.id) ?? uid(),
+      nextTextBoxId: el.nextTextBoxId
+        ? idMap.get(el.nextTextBoxId)
+        : undefined,
+      textStyles: el.textStyles?.map((range) => ({
+        ...range,
+        style: { ...range.style },
+      })),
+    }));
+    setPages((prev) =>
+      ubahElemen(prev, hal, (els) => [...els, ...salinan])
+    );
+    setSelectedIds(salinan.map((el) => el.id));
+    setSelectedId(salinan.at(-1)?.id ?? null);
+    setMode("ukuran");
   }
 
   function duplikat() {
-    if (selected) tambahElemen(cloneElement(selected));
+    const ids = new Set(selectedIds.length ? selectedIds : selected ? [selected.id] : []);
+    if (ids.size === 0) return;
+    const sources = elements.filter((el) => ids.has(el.id));
+    const idMap = new Map(sources.map((el) => [el.id, uid()]));
+    const salinan = sources.map((el) => ({
+      ...el,
+      id: idMap.get(el.id) ?? uid(),
+      x: round(el.x + 5),
+      y: round(el.y + 5),
+      nextTextBoxId: el.nextTextBoxId
+        ? idMap.get(el.nextTextBoxId)
+        : undefined,
+      textStyles: el.textStyles?.map((range) => ({
+        ...range,
+        style: { ...range.style },
+      })),
+    }));
+    setPages((prev) =>
+      ubahElemen(prev, hal, (els) => [...els, ...salinan])
+    );
+    setSelectedIds(salinan.map((el) => el.id));
+    setSelectedId(salinan.at(-1)?.id ?? null);
+    setMode("ukuran");
   }
 
   function hubungkanTeks(id: string, nextId: string | undefined) {
@@ -751,14 +1002,16 @@ export default function Editor({ design }: { design: EditorDesign }) {
   }
 
   function lapisan(op: LayerOp) {
-    if (!selectedId) return;
-    setPages((prev) => ubahElemen(prev, hal, (els) => moveLayer(els, selectedId, op)));
+    const ids = selectedIds.length ? selectedIds : selectedId ? [selectedId] : [];
+    if (ids.length === 0) return;
+    setPages((prev) => ubahElemen(prev, hal, (els) => moveLayers(els, ids, op)));
   }
 
   function alignSelected(action: AlignAction) {
     const ids = new Set(selectedIds);
     if (action !== "P" && ids.size < 2) return;
     if (ids.size === 0) return;
+    const anchorId = selectedIds.at(-1);
 
     setPages((prev) => {
       const page = prev[hal];
@@ -766,24 +1019,44 @@ export default function Editor({ design }: { design: EditorDesign }) {
       const chosen = page.elements.filter((el) => ids.has(el.id));
       if (chosen.length === 0 || (action !== "P" && chosen.length < 2)) return prev;
 
-      const left = Math.min(...chosen.map((el) => el.x));
-      const top = Math.min(...chosen.map((el) => el.y));
-      const right = Math.max(...chosen.map((el) => el.x + el.w));
-      const bottom = Math.max(...chosen.map((el) => el.y + el.h));
+      const anchor = chosen.find((el) => el.id === anchorId);
+      const anchorBounds = anchor ? elementBounds(anchor) : null;
+      const bounds = selectionBounds(chosen);
+      if (!bounds) return prev;
+      const { left, top, right, bottom } = bounds;
       const delta = (el: DesignElement) => {
+        const box = elementBounds(el);
         switch (action) {
           case "C":
-            return { x: round((left + right - el.w) / 2 - el.x), y: 0 };
+            return {
+              x: round(
+                ((anchorBounds?.left ?? left) +
+                  (anchorBounds?.right ?? right) -
+                  box.left -
+                  box.right) /
+                  2
+              ),
+              y: 0,
+            };
           case "E":
-            return { x: 0, y: round((top + bottom - el.h) / 2 - el.y) };
+            return {
+              x: 0,
+              y: round(
+                ((anchorBounds?.top ?? top) +
+                  (anchorBounds?.bottom ?? bottom) -
+                  box.top -
+                  box.bottom) /
+                  2
+              ),
+            };
           case "L":
-            return { x: round(left - el.x), y: 0 };
+            return { x: round((anchorBounds?.left ?? left) - box.left), y: 0 };
           case "R":
-            return { x: round(right - el.w - el.x), y: 0 };
+            return { x: round((anchorBounds?.right ?? right) - box.right), y: 0 };
           case "T":
-            return { x: 0, y: round(top - el.y) };
+            return { x: 0, y: round((anchorBounds?.top ?? top) - box.top) };
           case "B":
-            return { x: 0, y: round(bottom - el.h - el.y) };
+            return { x: 0, y: round((anchorBounds?.bottom ?? bottom) - box.bottom) };
           case "P":
             return {
               x: round((size.w - (right - left)) / 2 - left),
@@ -805,11 +1078,18 @@ export default function Editor({ design }: { design: EditorDesign }) {
   }
 
   function geser(dx: number, dy: number) {
-    if (!selected) return;
-    updateElement(selected.id, {
-      x: round(selected.x + dx),
-      y: round(selected.y + dy),
-    });
+    const ids = new Set(selectedIds.length ? selectedIds : selected ? [selected.id] : []);
+    if (!ids.size) return;
+    setPages((prev) =>
+      ubahElemen(prev, hal, (els) =>
+        els.map((el) =>
+          ids.has(el.id)
+            ? { ...el, x: round(el.x + dx), y: round(el.y + dy) }
+            : el
+        )
+      ),
+      `nudge:${[...ids].sort().join(",")}`
+    );
   }
 
   function pindah(arah: 1 | -1) {
@@ -830,13 +1110,10 @@ export default function Editor({ design }: { design: EditorDesign }) {
 
   function gayaTeks(k: "bold" | "italic" | "underline") {
     if (selected?.type !== "text") return;
-    const patch: Partial<DesignElement> =
-      k === "bold"
-        ? { bold: !selected.bold }
-        : k === "italic"
-        ? { italic: !selected.italic }
-        : { underline: !selected.underline };
-    updateElement(selected.id, patch);
+    const patch = {
+      [k]: !selected[k],
+    };
+    formatText(selected.id, patch);
   }
 
   function batal() {
@@ -1140,13 +1417,16 @@ export default function Editor({ design }: { design: EditorDesign }) {
           scale={scale}
           elements={elements}
           textFlow={textFlow}
+          textStylesById={textStylesById}
           selectedId={selectedId}
           selectedIds={selectedIds}
           editingId={editingId}
           tool={tool}
           mode={mode}
           onSelect={pilih}
+          onSelectMany={pilihBanyak}
           onUpdate={updateElement}
+          onUpdateMany={updateMany}
           onCreate={tambahElemen}
           onToolDone={selesaiAlat}
           onDropImage={unggahKeCanvas}
@@ -1154,6 +1434,8 @@ export default function Editor({ design }: { design: EditorDesign }) {
           onCycleMode={siklusMode}
           onEdit={aturEditing}
           onScale={setScale}
+          onText={onTextChange}
+          onTextSelection={onTextSelection}
         />
         <EditorSidebar
           tab={sidebarTab}
@@ -1164,10 +1446,13 @@ export default function Editor({ design }: { design: EditorDesign }) {
           mode={mode}
           textBoxOptions={textBoxOptions}
           onChange={updateElement}
+          onFormatText={formatText}
           onLinkText={hubungkanTeks}
           onLayer={lapisan}
           onDuplicate={duplikat}
           onDelete={hapus}
+          onCopy={salin}
+          onCut={potong}
           onFillImage={isiGambar}
           onError={setPesan}
           elements={elements}

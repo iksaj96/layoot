@@ -29,6 +29,46 @@ export function moveLayer(
   return salinan;
 }
 
+export function moveLayers(
+  els: DesignElement[],
+  ids: string[],
+  op: LayerOp
+): DesignElement[] {
+  const selected = new Set(ids);
+  if (selected.size < 2 || !els.some((el) => selected.has(el.id))) {
+    return selected.size === 1
+      ? moveLayer(els, ids[0], op)
+      : els;
+  }
+
+  const ordered = [...els];
+  if (op === "atas") {
+    const block = ordered.filter((el) => selected.has(el.id));
+    const moved = [...ordered.filter((el) => !selected.has(el.id)), ...block];
+    return moved.every((el, index) => el === els[index]) ? els : moved;
+  }
+  if (op === "bawah") {
+    const block = ordered.filter((el) => selected.has(el.id));
+    const moved = [...block, ...ordered.filter((el) => !selected.has(el.id))];
+    return moved.every((el, index) => el === els[index]) ? els : moved;
+  }
+
+  if (op === "naik") {
+    for (let i = ordered.length - 2; i >= 0; i -= 1) {
+      if (selected.has(ordered[i].id) && !selected.has(ordered[i + 1].id)) {
+        [ordered[i], ordered[i + 1]] = [ordered[i + 1], ordered[i]];
+      }
+    }
+  } else {
+    for (let i = 1; i < ordered.length; i += 1) {
+      if (selected.has(ordered[i].id) && !selected.has(ordered[i - 1].id)) {
+        [ordered[i], ordered[i - 1]] = [ordered[i - 1], ordered[i]];
+      }
+    }
+  }
+  return ordered.every((el, index) => el === els[index]) ? els : ordered;
+}
+
 export function cloneElement(el: DesignElement, geser = 5): DesignElement {
   return {
     ...el,

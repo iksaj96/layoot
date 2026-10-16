@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { DEFAULT_FONT_SIZE } from "@/lib/types";
 import type { DesignElement } from "@/lib/types";
+import type { TextStyleRange } from "@/lib/types";
 import type { TextFlowSegment } from "../core/textFlow";
+import type { Bounds } from "../core/geometry";
+import { elementBounds, selectionBounds } from "../core/geometry";
 import ElementView from "./ElementView";
 import { MAX_SCALE, MIN_SCALE, MIN_SIZE, PX_PER_MM, PT_TO_MM, clamp, round, uid } from "../core/utils";
 import type { Handle, Mode, Tool } from "../core/utils";
@@ -14,13 +17,20 @@ type Props = {
   scale: number;
   elements: DesignElement[];
   textFlow: Record<string, TextFlowSegment>;
+  textStylesById: Record<string, TextStyleRange[] | undefined>;
   selectedId: string | null;
   selectedIds: string[];
   editingId: string | null;
   tool: Tool;
   mode: Mode;
   onSelect: (id: string | null, additive?: boolean) => void;
+  onSelectMany: (ids: string[], additive: boolean) => void;
   onUpdate: (id: string, patch: Partial<DesignElement>) => void;
+  onUpdateMany: (
+    patches: Record<string, Partial<DesignElement>>,
+    historyKey: string,
+    mergePermanently?: boolean
+  ) => void;
   onCreate: (el: DesignElement) => void;
   onToolDone: () => void;
   onDropImage: (file: File, x: number, y: number) => void;
@@ -28,6 +38,8 @@ type Props = {
   onCycleMode: (id: string) => void;
   onEdit: (id: string | null) => void;
   onScale: (s: number) => void;
+  onText: (id: string, text: string, start: number, end: number) => void;
+  onTextSelection: (id: string, start: number, end: number) => void;
 };
 
 export default function Canvas({
@@ -35,13 +47,16 @@ export default function Canvas({
   scale,
   elements,
   textFlow,
+  textStylesById,
   selectedId,
   selectedIds,
   editingId,
   tool,
   mode,
   onSelect,
+  onSelectMany,
   onUpdate,
+  onUpdateMany,
   onCreate,
   onToolDone,
   onDropImage,
@@ -49,6 +64,8 @@ export default function Canvas({
   onCycleMode: onCycleModeChange,
   onEdit,
   onScale,
+  onText,
+  onTextSelection,
 }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const workspaceRef = useRef<HTMLDivElement>(null);
@@ -56,6 +73,7 @@ export default function Canvas({
   const panRef = useRef({ x: 0, y: 0 });
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [cropPreview, setCropPreview] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [marquee, setMarquee] = useState<Bounds | null>(null);
   const sudahNavigasi = useRef(false);
   const sentuhan = useRef(new Map<number, { x: number; y: number }>());
   const gestureAwal = useRef<{
@@ -72,6 +90,11 @@ export default function Canvas({
   } | null>(null);
   const pageW = size.w * PX_PER_MM;
   const pageH = size.h * PX_PER_MM;
+  const selectedGroup =
+    selectedIds.length > 1
+      ? elements.filter((el) => selectedIds.includes(el.id))
+      : [];
+  const groupBounds = selectionBounds(selectedGroup);
 
   const titikHalaman = useCallback((clientX: number, clientY: number) => {
     const wrap = wrapRef.current;
@@ -595,9 +618,14 @@ export default function Canvas({
 
       const sudahDipilih = selectedIds.includes(el.id);
       const shiftSelect = aksi === "move" && e.shiftKey;
-      if (!shiftSelect && (!sudahDipilih || (aksi === "move" && selectedIds.length > 1))) {
+      if (!shiftSelect && !sudahDipilih) {
         onSelect(el.id);
       }
+      const group = selectedIds.length > 1 && sudahDipilih
+        ? elements.filter((item) => selectedIds.includes(item.id))
+        : [];
+      const groupBox = selectionBounds(group);
+      const groupKey = `group-${aksi}:${selectedIds.slice().sort().join(",")}:${uid()}`;
 
       e.currentTarget.setPointerCapture(e.pointerId);
       const sx = e.clientX;
@@ -624,7 +652,76 @@ export default function Canvas({
           } else {
             arahTerkunci = null;
           }
-          onUpdate(el.id, { x: round(o.x + dx), y: round(o.y + dy) });
+          if (group.length > 1) {
+            onUpdateMany(
+              Object.fromEntries(
+                group.map((item) => [
+                  item.id,
+                  { x: round(item.x + dx), y: round(item.y + dy) },
+                ])
+              ),
+              groupKey,
+              true
+            );
+          } else {
+            onUpdate(el.id, { x: round(o.x + dx), y: round(o.y + dy) });
+          }
+          return;
+        }
+
+        if (group.length > 1 && groupBox) {
+          let left = groupBox.left;
+          let top = groupBox.top;
+          let right = groupBox.right;
+          let bottom = groupBox.bottom;
+          if (aksi.includes("e")) right = Math.max(left + MIN_SIZE, right + dx);
+          if (aksi.includes("w")) left = Math.min(right - MIN_SIZE, left + dx);
+          if (aksi.includes("s")) bottom = Math.max(top + MIN_SIZE, bottom + dy);
+          if (aksi.includes("n")) top = Math.min(bottom - MIN_SIZE, top + dy);
+
+          if (e.shiftKey && ["nw", "ne", "sw", "se"].includes(aksi)) {
+            const oldWidth = groupBox.right - groupBox.left;
+            const oldHeight = groupBox.bottom - groupBox.top;
+            const ratio = Math.max(
+              (right - left) / Math.max(oldWidth, MIN_SIZE),
+              (bottom - top) / Math.max(oldHeight, MIN_SIZE)
+            );
+            const width = oldWidth * ratio;
+            const height = oldHeight * ratio;
+            if (aksi.includes("w")) left = right - width;
+            else right = left + width;
+            if (aksi.includes("n")) top = bottom - height;
+            else bottom = top + height;
+          }
+
+          const sx = (right - left) / Math.max(groupBox.right - groupBox.left, MIN_SIZE);
+          const sy = (bottom - top) / Math.max(groupBox.bottom - groupBox.top, MIN_SIZE);
+          onUpdateMany(
+            Object.fromEntries(
+              group.map((item) => [
+                item.id,
+                {
+                  x: round(left + (item.x - groupBox.left) * sx),
+                  y: round(top + (item.y - groupBox.top) * sy),
+                  w: round(item.w * sx),
+                  h: round(item.h * sy),
+                  ...(item.type === "text"
+                    ? {
+                        fontSize: round(
+                          (item.fontSize ?? DEFAULT_FONT_SIZE) * Math.sqrt(sx * sy)
+                        ),
+                        ...((aksi.includes("n") || aksi.includes("s")) &&
+                        (item.textKind ?? "paragraph") === "paragraph"
+                          ? { textAutoHeight: false }
+                          : {}),
+                      }
+                    : {}),
+                },
+              ])
+            ),
+            groupKey,
+            true
+          );
           return;
         }
 
@@ -707,7 +804,55 @@ export default function Canvas({
       window.addEventListener("pointerup", onUp);
       window.addEventListener("pointercancel", onUp);
     },
-    [scale, selectedIds, onSelect, onUpdate]
+    [scale, selectedIds, elements, onSelect, onUpdate, onUpdateMany]
+  );
+
+  const startGroupRotate = useCallback(
+    (e: React.PointerEvent, group: DesignElement[], bounds: Bounds) => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      e.preventDefault();
+      const centerX = (bounds.left + bounds.right) / 2;
+      const centerY = (bounds.top + bounds.bottom) / 2;
+      const start = titikHalaman(e.clientX, e.clientY);
+      const startAngle = Math.atan2(start.y - centerY, start.x - centerX);
+      const ids = selectedIds.slice().sort().join(",");
+
+      const onMove = (event: PointerEvent) => {
+        const point = titikHalaman(event.clientX, event.clientY);
+        const angle = Math.atan2(point.y - centerY, point.x - centerX);
+        const delta = angle - startAngle;
+        const cos = Math.cos(delta);
+        const sin = Math.sin(delta);
+        onUpdateMany(
+          Object.fromEntries(
+            group.map((item) => {
+              const x = item.x + item.w / 2 - centerX;
+              const y = item.y + item.h / 2 - centerY;
+              return [
+                item.id,
+                {
+                  x: round(centerX + x * cos - y * sin - item.w / 2),
+                  y: round(centerY + x * sin + y * cos - item.h / 2),
+                  rotation: round((item.rotation ?? 0) + (delta * 180) / Math.PI),
+                },
+              ];
+            })
+          ),
+          `group-rotate:${ids}:${uid()}`,
+          true
+        );
+      };
+      const onUp = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onUp);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onUp);
+    },
+    [onUpdateMany, selectedIds, titikHalaman]
   );
 
   /* Atur kelengkungan sudut persegi */
@@ -794,11 +939,6 @@ export default function Canvas({
     [startDrag]
   );
 
-  const onText = useCallback(
-    (id: string, text: string) => onUpdate(id, { text }),
-    [onUpdate]
-  );
-
   const onEditEnd = useCallback(() => onEdit(null), [onEdit]);
   const cycleMode = useCallback(
     (id: string) => {
@@ -812,7 +952,63 @@ export default function Canvas({
     if (e.target !== e.currentTarget || e.button !== 0) return;
     workspaceRef.current?.focus({ preventScroll: true });
     if (tool === "pilih") {
-      onSelect(null);
+      if (e.pointerType === "touch") {
+        if (!e.shiftKey) onSelect(null);
+        return;
+      }
+      e.preventDefault();
+      const start = titikHalaman(e.clientX, e.clientY);
+      const shift = e.shiftKey;
+      const awal: Bounds = {
+        left: start.x,
+        top: start.y,
+        right: start.x,
+        bottom: start.y,
+      };
+      let latest = awal;
+      setMarquee(awal);
+      e.currentTarget.setPointerCapture(e.pointerId);
+
+      const move = (event: PointerEvent) => {
+        if (event.pointerId !== e.pointerId) return;
+        const current = titikHalaman(event.clientX, event.clientY);
+        latest = {
+          left: Math.min(start.x, current.x),
+          top: Math.min(start.y, current.y),
+          right: Math.max(start.x, current.x),
+          bottom: Math.max(start.y, current.y),
+        };
+        setMarquee(latest);
+      };
+      const finish = (event: PointerEvent) => {
+        if (event.pointerId !== e.pointerId) return;
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", finish);
+        window.removeEventListener("pointercancel", finish);
+        setMarquee(null);
+        if (
+          Math.abs(latest.right - latest.left) < 1 &&
+          Math.abs(latest.bottom - latest.top) < 1
+        ) {
+          if (!shift) onSelect(null);
+          return;
+        }
+        const enclosed = elements
+          .filter((el) => {
+            const box = elementBounds(el);
+            return (
+              box.left >= latest.left &&
+              box.top >= latest.top &&
+              box.right <= latest.right &&
+              box.bottom <= latest.bottom
+            );
+          })
+          .map((el) => el.id);
+        onSelectMany(enclosed, shift);
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", finish);
+      window.addEventListener("pointercancel", finish);
       return;
     }
     if (tool === "crop") {
@@ -912,7 +1108,8 @@ export default function Canvas({
               el={el}
               scale={PX_PER_MM}
               selected={selectedIds.includes(el.id)}
-              showHandles={el.id === selectedId}
+              primarySelected={selectedIds.length > 1 && el.id === selectedId}
+              showHandles={selectedIds.length === 1 && el.id === selectedId}
               showModeHandle={
                 selectedIds.length === 1 &&
                 el.id === selectedId &&
@@ -921,6 +1118,7 @@ export default function Canvas({
               }
               editing={el.id === editingId}
               textFlow={textFlow[el.id]}
+              textStyles={textStylesById[textFlow[el.id]?.sourceId ?? el.id]}
               cursor={tool === "pilih" ? "move" : "crosshair"}
               mode={el.id === selectedId ? mode : "ukuran"}
               handleScale={PX_PER_MM / scale}
@@ -932,9 +1130,88 @@ export default function Canvas({
               onActivate={onActivate}
               onCycleMode={cycleMode}
               onText={onText}
+              onTextSelection={onTextSelection}
               onEditEnd={onEditEnd}
             />
           ))}
+          {groupBounds && selectedId && (
+            <div
+              aria-label={`Batas ${selectedGroup.length} objek terpilih`}
+              className="pointer-events-none absolute border border-indigo-600"
+              style={{
+                left: groupBounds.left * PX_PER_MM,
+                top: groupBounds.top * PX_PER_MM,
+                width: (groupBounds.right - groupBounds.left) * PX_PER_MM,
+                height: (groupBounds.bottom - groupBounds.top) * PX_PER_MM,
+                zIndex: 4,
+              }}
+            >
+              {(
+                [
+                  ["nw", { left: -5, top: -5 }, "nwse-resize"],
+                  ["n", { left: "50%", top: -5, transform: "translateX(-50%)" }, "ns-resize"],
+                  ["ne", { right: -5, top: -5 }, "nesw-resize"],
+                  ["e", { right: -5, top: "50%", transform: "translateY(-50%)" }, "ew-resize"],
+                  ["sw", { left: -5, bottom: -5 }, "nesw-resize"],
+                  ["s", { left: "50%", bottom: -5, transform: "translateX(-50%)" }, "ns-resize"],
+                  ["se", { right: -5, bottom: -5 }, "nwse-resize"],
+                  ["w", { left: -5, top: "50%", transform: "translateY(-50%)" }, "ew-resize"],
+                ] as const
+              ).map(([handle, position, cursor]) => (
+                <div
+                  key={handle}
+                  data-element-handle
+                  onPointerDown={(event) =>
+                    startDrag(
+                      event,
+                      {
+                        id: selectedId,
+                        type: "rect",
+                        x: groupBounds.left,
+                        y: groupBounds.top,
+                        w: groupBounds.right - groupBounds.left,
+                        h: groupBounds.bottom - groupBounds.top,
+                      },
+                      handle
+                    )
+                  }
+                  style={{
+                    position: "absolute",
+                    width: 10,
+                    height: 10,
+                    background: "#fff",
+                    border: "1px solid #1c1917",
+                    cursor,
+                    touchAction: "none",
+                    pointerEvents: "auto",
+                    ...position,
+                  }}
+                />
+              ))}
+              <div
+                data-element-handle
+                title="Seret untuk memutar semua objek"
+                onPointerDown={(event) =>
+                  startGroupRotate(event, selectedGroup, groupBounds)
+                }
+                style={{
+                  position: "absolute",
+                  left: "50%",
+                  top: -30,
+                  width: 14,
+                  height: 14,
+                  transform: "translateX(-50%)",
+                  borderRadius: "50%",
+                  background: "#4f46e5",
+                  border: "2px solid #fff",
+                  boxShadow: "0 0 0 1px #1c1917",
+                  cursor: "grab",
+                  touchAction: "none",
+                  pointerEvents: "auto",
+                }}
+              />
+            </div>
+          )}
           {cropPreview && (
             <div
               aria-hidden="true"
@@ -944,6 +1221,18 @@ export default function Canvas({
                 top: cropPreview.y * PX_PER_MM,
                 width: cropPreview.w * PX_PER_MM,
                 height: cropPreview.h * PX_PER_MM,
+              }}
+            />
+          )}
+          {marquee && (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute border border-dashed border-indigo-600 bg-indigo-400/10"
+              style={{
+                left: marquee.left * PX_PER_MM,
+                top: marquee.top * PX_PER_MM,
+                width: (marquee.right - marquee.left) * PX_PER_MM,
+                height: (marquee.bottom - marquee.top) * PX_PER_MM,
               }}
             />
           )}
