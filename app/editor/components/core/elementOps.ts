@@ -52,9 +52,9 @@ export function ubahElemen(
   return pages.map((x, i) => (i === index ? { ...x, elements: els } : x));
 }
 
-/** Radius sudut (mm) yang valid untuk persegi. */
+/** Radius sudut (mm) yang valid untuk persegi dan gambar. */
 export function radiusOf(el: DesignElement): number {
-  if (el.type !== "rect") return 0;
+  if (el.type !== "rect" && el.type !== "image") return 0;
   return Math.max(0, Math.min(el.radius ?? 0, Math.min(el.w, el.h) / 2));
 }
 
@@ -64,6 +64,8 @@ export function borderRadiusCss(
   satuan: (mm: number) => string
 ): string | undefined {
   if (el.type === "ellipse") return "50%";
-  if (el.type === "rect" && el.radius) return satuan(radiusOf(el));
+  if ((el.type === "rect" || el.type === "image") && el.radius) {
+    return satuan(radiusOf(el));
+  }
   return undefined;
 }

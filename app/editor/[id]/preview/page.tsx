@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import { notFound, redirect } from "next/navigation";
 import BookPreview from "@/app/editor/components/preview/BookPreview";
 import { createServerSupabase } from "@/lib/supabase-server";
@@ -8,6 +9,8 @@ import type { EditorDesign } from "@/lib/types";
 export const metadata: Metadata = { title: "Preview — Layoot" };
 
 async function PreviewContent({ params }: { params: Promise<{ id: string }> }) {
+  await connection();
+
   const { id } = await params;
   const supabase = await createServerSupabase();
   const {

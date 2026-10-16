@@ -18,7 +18,7 @@ export default function MasukPage() {
         <Navbar />
       </Suspense>
       <main className="flex justify-center px-5 py-14">
-        <AuthForm mode="masuk" />
+        <AuthForm />
       </main>
     </div>
   );

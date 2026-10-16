@@ -33,7 +33,7 @@ app/editor/
     ├── Editor.tsx             Otak editor: SEMUA state, simpan otomatis, salin/tempel, lapisan, halaman, merakit semua bagian
     ├── canvas/
     │   ├── Canvas.tsx         Kertas kerja: zoom scroll, geser klik roda tengah, gambar objek baru, geser/ubah ukuran, atur sudut
-    │   └── ElementView.tsx    Tampilan SATU objek di layar (teks, bentuk, gambar) + 8 pegangan ukuran + pegangan sudut
+    │   └── ElementView.tsx    Tampilan SATU objek di layar (teks, bentuk, gambar) + pegangan transformasi
     ├── toolbar/
     │   ├── Toolbox.tsx        Kolom alat kiri (pilih, teks, persegi, elips, garis, crop) + pintasan
     │   ├── PropertyBar.tsx    Kontrol perataan di atas panel kanan saat objek dipilih
@@ -47,7 +47,10 @@ app/editor/
     │   ├── LayersPanel.tsx    Daftar objek (lapisan) di kanan
     │   ├── PageStrip.tsx      Bilah halaman di bawah (tambah, duplikat, hapus)
     │   ├── StatusBar.tsx      Bilah paling bawah: info objek, petunjuk, kontrol zoom
-    │   └── ShortcutHelp.tsx   Jendela daftar pintasan keyboard (tombol ?)
+    │   ├── ShortcutHelp.tsx   Jendela daftar pintasan keyboard (tombol ?)
+    │   └── FeedbackModal.tsx  Modal laporan masalah dan saran yang disimpan ke Supabase
+    ├── preview/
+    │   └── BookPreview.tsx    Render desain dalam flipbook dengan ukuran kertas yang sama
     ├── export/
     │   └── ExportPdf.tsx      Tombol Ekspor PDF + tampilan CETAK semua halaman (terpisah dari ElementView)
     ├── ui/
@@ -62,6 +65,7 @@ app/editor/
         ├── fonts.ts           Daftar font, fontCss(), URL Google Fonts
         ├── color.ts           Konversi hex <-> HSV, warna cepat, isHex
         ├── elementOps.ts      Operasi murni: moveLayer, cloneElement, ubahElemen, radiusOf, borderRadiusCss
+        ├── textMetrics.ts     Ukur lebar teks artistik agar kotak mengikuti isi
         └── textFlow.ts        Pembagian teks untuk kotak berkolom yang saling terhubung
 
 lib/types.ts                   Tipe data: Paper, DesignElement, DesignPage, Design, EditorDesign
@@ -71,6 +75,7 @@ lib/types.ts                   Tipe data: Paper, DesignElement, DesignPage, Desi
 | Bagian yang mau diubah | File |
 |---|---|
 | Header (judul, ukuran/orientasi kertas, undo/redo, bantuan, status simpan, tombol Ekspor PDF) | `Editor.tsx` (bagian `<header>`), tombol PDF di `export/ExportPdf.tsx` |
+| Tombol laporan masalah dan saran | `Editor.tsx` + `panels/FeedbackModal.tsx` + migrasi `supabase/migrations/20261016000000_feedback_reports.sql` |
 | Kontrol perataan objek terpilih di panel kanan | `toolbar/PropertyBar.tsx` + `toolbar/EditorSidebar.tsx` |
 | Properti detail dan tab sidebar Properti/Katalog/Objek | `toolbar/PropertiesPanel.tsx` + `toolbar/EditorSidebar.tsx` |
 | Kolom alat di kiri, termasuk Crop, dan shortcut pada tombol | `toolbar/Toolbox.tsx` + `ui/Icon.tsx` |
@@ -84,7 +89,7 @@ lib/types.ts                   Tipe data: Paper, DesignElement, DesignPage, Desi
 | Dropdown font | `toolbar/FontSelect.tsx` (daftar font di `core/fonts.ts`) |
 | Jendela daftar pintasan | `panels/ShortcutHelp.tsx` |
 | Hasil PDF / cetak | `export/ExportPdf.tsx` |
-| Preview selebaran seperti buku | `preview/BookPreview.tsx` + `[id]/preview/page.tsx`; pemicu tombol di `Editor.tsx` |
+| Preview selebaran seperti buku | `components/preview/BookPreview.tsx` + `[id]/preview/page.tsx`; pemicu tombol di `Editor.tsx`; render elemen menggunakan `canvas/ElementView.tsx` |
 | Bentuk ikon | `ui/Icon.tsx` |
 
 ## Cari file dari JENIS PERUBAHAN
@@ -114,6 +119,7 @@ lib/types.ts                   Tipe data: Paper, DesignElement, DesignPage, Desi
 - `Editor.tsx` mengimpor: semua komponen di `canvas/`, `toolbar/`, `panels/`, `export/`, `ui/Icon`, semua `hooks/`, dan `core/utils`, `core/elementOps`.
 - `canvas/Canvas.tsx` memakai `canvas/ElementView.tsx` dan `core/utils`.
 - `canvas/ElementView.tsx` memakai `core/elementOps`, `core/fonts`, `core/utils`.
+- `preview/BookPreview.tsx` memakai `canvas/ElementView.tsx`, `core/textFlow`, `core/utils`, dan ukuran `PAPER_SIZE_MM`.
 - `export/ExportPdf.tsx` memakai `core/elementOps`, `core/fonts`, `ui/Icon`. Logika tampilan sama dengan `ElementView.tsx` tetapi satuan mm, jadi dua file ini harus selalu dijaga sinkron.
 - `toolbar/PropertiesPanel.tsx` memakai `ColorPicker`, `FontSelect`, `ImageUpload`, `ui/NumberField`, `ui/Icon`, `core/elementOps`.
 - `toolbar/EditorSidebar.tsx` merakit panel properti, katalog gambar, dan daftar objek.
@@ -121,7 +127,7 @@ lib/types.ts                   Tipe data: Paper, DesignElement, DesignPage, Desi
 - Semua file memakai tipe dari `lib/types.ts`.
 
 ## Model data (lib/types.ts)
-`DesignElement`: id, type (`text` | `rect` | `ellipse` | `image` | `line`), x, y, w, h (mm), text, fontFamily, fontSize (pt), bold, italic, underline, align, columns, nextTextBoxId, color, fill, radius (mm), rotation (derajat), flipX, flipY, src, fit (`cover` | `contain`), crop (jendela crop relatif).
+`DesignElement`: id, type (`text` | `rect` | `ellipse` | `image` | `line`), x, y, w, h (mm), text, textKind (`artistic` | `paragraph`), fontFamily, fontSize (pt), bold, italic, underline, align, columns, nextTextBoxId, color, fill, radius (mm), rotation (derajat), flipX, flipY, src, fit (`cover` | `contain`), crop (jendela crop relatif).
 `src` dipakai oleh `image` dan juga sebagai gambar isi di dalam `rect`/`ellipse`.
 Urutan array `elements` = urutan lapisan (elemen terakhir paling atas).
 Field baru harus opsional agar desain lama tetap aman. `pages` disimpan sebagai JSON di Supabase, jadi tidak perlu ubah tabel.
@@ -130,12 +136,15 @@ Field baru harus opsional agar desain lama tetap aman. `pages` disimpan sebagai 
 - **State utama** ada di `Editor.tsx`. Komponen lain hanya menerima props dan callback.
 - **Undo/redo**: `setPages(fn, kunci?)` dari `useHistory`. Kunci sama dalam 0,7 detik jadi satu langkah.
 - **Simpan otomatis**: debounce 650 ms setelah `pages`, `title`, `paper`, atau `orientation` berubah; perubahan yang berdekatan digabung ke satu update. Update memakai `updated_at` sebagai optimistic lock dan realtime menyinkronkan tab yang bersih. `Ctrl+S` simpan langsung.
-- **Mode transformasi**: klik objek dua kali untuk mode putar/balik; klik tiga kali pada persegi untuk mode sudut.
+- **Mode transformasi**: klik objek terpilih berulang kali untuk siklus ukuran → putar → sudut → ukuran (sudut hanya untuk persegi/gambar); klik dua kali teks untuk mengedit.
+- **Teks**: klik dengan alat Teks membuat teks artistik satu baris; seret membuat teks paragraf yang membungkus isi. Resize artistik menskalakan font, sedangkan resize paragraf mengatur ulang kotak.
+- **Gambar bentuk**: persegi dan gambar mendukung radius sudut; elips dan teks melewati mode sudut.
+- **Gambar bentuk dengan batas**: tahan Ctrl/Cmd saat menggambar untuk proporsi 1:1, Shift untuk menggambar dari titik tengah.
 - **Pustaka gambar**: tombol gambar membuka koleksi pada bucket `design-assets`; unggahan lebih dari 2 MB atau 2000 px per sisi menawarkan kompresi hingga batas 15 MB/2000 px, atau dapat dibatalkan. File sumber di atas 50 MB ditolak. Unggahan dari pustaka atau drag-and-drop tersimpan di Storage, dan hapus aset juga melepaskan referensinya dari desain ini.
 - **Data Supabase**: jalankan `supabase/migrations/20261015000000_profiles_and_images.sql` untuk membuat/sinkronisasi `profiles` dan `images`, termasuk backfill gambar lama dari bucket.
 - **Zoom**: scroll di `Canvas.tsx` (listener wheel non-passive), menjaga titik di bawah kursor. Geser tampilan dengan klik roda tengah.
 - **Font**: font sistem lebih dulu, lalu pengganti metrik-setara dari Google Fonts (Tinos, Arimo, Carlito, dll).
-- **Ekspor PDF**: `ExportPdf.tsx` merender semua halaman di `#area-cetak` dengan satuan mm, lalu `window.print()`.
+- **Preview dan PDF**: preview memakai kanvas berukuran kertas dalam px/mm dan komponen `ElementView`; PDF merender semua halaman di `#area-cetak` dengan satuan mm, lalu `window.print()`.
 - **Ukuran kertas dan orientasi**: `paper` serta `orientation` berlaku untuk seluruh dokumen dan disimpan di kolom desain yang sama; semua halaman memakai ukuran aktif ketika diedit dan diekspor.
 - **Ukuran teks baru**: `DEFAULT_FONT_SIZE` di `lib/types.ts` menjadi sumber nilai default teks pada editor dan ekspor.
 
@@ -143,6 +152,8 @@ Field baru harus opsional agar desain lama tetap aman. `pages` disimpan sebagai 
 Ctrl+S simpan, Ctrl+Z urungkan, Ctrl+Shift+Z / Ctrl+Y ulangi, Ctrl+C/X/V salin/potong/tempel, Ctrl+D duplikat,
 Delete/Backspace hapus, Tab / Shift+Tab pilih objek berikutnya/sebelumnya, Enter edit teks, Panah geser 1 mm (Shift 10 mm),
 Shift atau Ctrl sambil menyeret objek mengunci gerakan ke sumbu horizontal/vertikal,
+Ctrl/Cmd sambil menggambar bentuk mengunci proporsi 1:1, Shift sambil menggambar dari titik tengah,
+klik objek terpilih mengulang mode ukuran/putar/sudut,
 V/T/R/E pilih alat, Esc batal, Ctrl+B/I/U gaya teks, Ctrl+] / Ctrl+[ naik/turun lapisan,
 Shift+PageUp/PageDown ke paling atas/bawah, Alt+PageUp/PageDown naik/turun lapisan,
 Ctrl+= / Ctrl+- / Ctrl+0 zoom, ? atau F1 bantuan.
@@ -159,3 +170,4 @@ Catatan: Ctrl+PageUp/PageDown dipakai Chrome untuk pindah tab, jadi tidak bisa d
 - 2026-10-15: Properti objek dipindah ke sidebar bertab Properti/Katalog/Objek, alat Crop mendukung objek dan gambar, serta shortcut ditampilkan pada tombol yang memilikinya.
 - 2026-10-15: Header editor diringkas menjadi satu baris; pengaturan ukuran/orientasi dokumen dipindah ke header, sedangkan kontrol perataan berada di kartu panel kanan.
 - 2026-10-15: Tombol preview membuka desain tersimpan di tab baru dengan tampilan buku responsif dan navigasi halaman.
+- 2026-10-16: Menambahkan laporan masalah/saran, mode klik transformasi, radius gambar, teks artistik/paragraf dan resize khusus, modifier menggambar bentuk, serta menyamakan ukuran dan render kanvas preview dengan editor.

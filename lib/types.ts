@@ -24,6 +24,8 @@ export type DesignElement = {
   w: number; // mm
   h: number; // mm
   text?: string;
+  textKind?: "artistic" | "paragraph";
+  textAutoHeight?: boolean;
   fontFamily?: string; // nama font, mis. "Times New Roman"
   fontSize?: number; // pt
   bold?: boolean;

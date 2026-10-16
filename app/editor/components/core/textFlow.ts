@@ -1,6 +1,6 @@
 import { DEFAULT_FONT_SIZE } from "@/lib/types";
 import type { DesignElement } from "@/lib/types";
-import { PT_TO_MM } from "./utils";
+import { PX_PER_MM, PT_TO_MM } from "./utils";
 import { fontCss } from "./fonts";
 
 export type TextFlowSegment = {
@@ -12,6 +12,30 @@ export type TextFlowSegment = {
 
 function fontSizeMm(el: DesignElement): number {
   return (el.fontSize ?? DEFAULT_FONT_SIZE) * PT_TO_MM;
+}
+
+function measureTextMm(
+  el: DesignElement,
+  useCanvasMetrics: boolean
+): (text: string) => number {
+  const size = fontSizeMm(el);
+  const declaredFamily = fontCss(el.fontFamily);
+  const family =
+    declaredFamily === "inherit" && typeof document !== "undefined"
+      ? getComputedStyle(document.body).fontFamily || "Arial, sans-serif"
+      : declaredFamily === "inherit"
+        ? "Arial, sans-serif"
+        : declaredFamily;
+  const context =
+    !useCanvasMetrics || typeof document === "undefined"
+      ? null
+      : document.createElement("canvas").getContext("2d");
+  if (context) {
+    context.font = `${el.italic ? "italic " : ""}${el.bold ? "bold " : ""}${size * PX_PER_MM}px ${family}`;
+  }
+  return context
+    ? (text: string) => context.measureText(text).width / PX_PER_MM
+    : (text: string) => Array.from(text).length * size * 0.52;
 }
 
 function lineStarts(
@@ -90,19 +114,22 @@ function fitTextEnd(
   const columns = Math.max(1, Math.min(6, Math.floor(el.columns ?? 1)));
   const size = fontSizeMm(el);
   const columnWidth = Math.max(1, (el.w - size * (columns - 1)) / columns);
-  const family = fontCss(el.fontFamily);
-  const context = !useCanvasMetrics || typeof document === "undefined"
-    ? null
-    : document.createElement("canvas").getContext("2d");
-  if (context) {
-    context.font = `${el.italic ? "italic " : ""}${el.bold ? "bold " : ""}${size}px ${family === "inherit" ? "Arial, sans-serif" : family}`;
-  }
-  const measure = context
-    ? (value: string) => context.measureText(value).width
-    : (value: string) => Array.from(value).length * size * 0.52;
-  const starts = lineStarts(text, columnWidth, measure);
+  const starts = lineStarts(text, columnWidth, measureTextMm(el, useCanvasMetrics));
   const capacity = Math.max(1, Math.floor(el.h / (size * 1.3))) * columns;
   return starts.length <= capacity ? text.length : starts[capacity];
+}
+
+export function calculateTextHeightMm(
+  el: DesignElement,
+  text: string,
+  useCanvasMetrics = true
+): number {
+  const columns = Math.max(1, Math.min(6, Math.floor(el.columns ?? 1)));
+  const size = fontSizeMm(el);
+  const columnWidth = Math.max(1, (el.w - size * (columns - 1)) / columns);
+  const measure = measureTextMm(el, useCanvasMetrics);
+  const lines = Math.max(1, lineStarts(text, columnWidth, measure).length);
+  return Math.ceil(lines / columns) * size * 1.3;
 }
 
 export function calculateTextFlow(
@@ -110,15 +137,18 @@ export function calculateTextFlow(
   useCanvasMetrics = true
 ): Record<string, TextFlowSegment> {
   const boxes = elements.filter((el) => el.type === "text");
-  const ids = new Set(boxes.map((el) => el.id));
+  const linkableBoxes = boxes.filter(
+    (el) => (el.textKind ?? "paragraph") !== "artistic"
+  );
+  const ids = new Set(linkableBoxes.map((el) => el.id));
   const incoming = new Set(
-    boxes
+    linkableBoxes
       .map((el) => el.nextTextBoxId)
       .filter((id): id is string => !!id && ids.has(id))
   );
   const result: Record<string, TextFlowSegment> = {};
 
-  for (const root of boxes) {
+  for (const root of linkableBoxes) {
     if (incoming.has(root.id)) continue;
 
     const fullText = root.text ?? "";
@@ -138,7 +168,7 @@ export function calculateTextFlow(
       };
       remaining = fullText.slice(end);
       start = end;
-      current = boxes.find((el) => el.id === current?.nextTextBoxId);
+      current = linkableBoxes.find((el) => el.id === current?.nextTextBoxId);
     }
   }
 

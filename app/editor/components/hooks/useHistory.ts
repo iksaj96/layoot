@@ -3,7 +3,7 @@
 import { useCallback, useReducer } from "react";
 
 const BATAS = 100; // jumlah langkah undo maksimal
-const JEDA_GABUNG = 700; // ms, perubahan beruntun dengan kunci sama digabung
+const JEDA_GABUNG = 700; // ms, selain kelompok yang ditandai permanen
 
 type Snap<T> = {
   past: T[];
@@ -11,10 +11,17 @@ type Snap<T> = {
   future: T[];
   kunci: string;
   waktu: number;
+  gabungPermanen: boolean;
 };
 
 type Aksi<T> =
-  | { jenis: "set"; ubah: (prev: T) => T; kunci?: string; waktu: number }
+  | {
+      jenis: "set";
+      ubah: (prev: T) => T;
+      kunci?: string;
+      waktu: number;
+      gabungPermanen: boolean;
+    }
   | { jenis: "undo" }
   | { jenis: "redo" };
 
@@ -26,13 +33,16 @@ function reducer<T>(s: Snap<T>, a: Aksi<T>): Snap<T> {
       const gabung =
         a.kunci !== undefined &&
         a.kunci === s.kunci &&
-        a.waktu - s.waktu < JEDA_GABUNG;
+        (s.gabungPermanen ||
+          a.gabungPermanen ||
+          a.waktu - s.waktu < JEDA_GABUNG);
       return {
         past: gabung ? s.past : [...s.past.slice(-(BATAS - 1)), s.present],
         present: next,
         future: [],
         kunci: a.kunci ?? "",
         waktu: a.waktu,
+        gabungPermanen: a.gabungPermanen,
       };
     }
     case "undo": {
@@ -43,6 +53,7 @@ function reducer<T>(s: Snap<T>, a: Aksi<T>): Snap<T> {
         future: [s.present, ...s.future],
         kunci: "",
         waktu: 0,
+        gabungPermanen: false,
       };
     }
     case "redo": {
@@ -54,6 +65,7 @@ function reducer<T>(s: Snap<T>, a: Aksi<T>): Snap<T> {
         future: sisa,
         kunci: "",
         waktu: 0,
+        gabungPermanen: false,
       };
     }
   }
@@ -63,13 +75,26 @@ export function useHistory<T>(awal: () => T) {
   const [s, dispatch] = useReducer(
     reducer<T>,
     undefined,
-    (): Snap<T> => ({ past: [], present: awal(), future: [], kunci: "", waktu: 0 })
+    (): Snap<T> => ({
+      past: [],
+      present: awal(),
+      future: [],
+      kunci: "",
+      waktu: 0,
+      gabungPermanen: false,
+    })
   );
 
-  /** kunci: perubahan beruntun dengan kunci sama (dalam 0,7 dtk) jadi satu langkah undo. */
+  /** kunci menggabungkan perubahan; gabungPermanen dipakai untuk satu sesi edit teks. */
   const set = useCallback(
-    (ubah: (prev: T) => T, kunci?: string) =>
-      dispatch({ jenis: "set", ubah, kunci, waktu: Date.now() }),
+    (ubah: (prev: T) => T, kunci?: string, gabungPermanen = false) =>
+      dispatch({
+        jenis: "set",
+        ubah,
+        kunci,
+        waktu: Date.now(),
+        gabungPermanen,
+      }),
     []
   );
   const undo = useCallback(() => dispatch({ jenis: "undo" }), []);

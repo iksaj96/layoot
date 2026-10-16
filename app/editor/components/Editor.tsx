@@ -2,14 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { createClient } from "@/lib/supabase";
-import { PAPER_OPTIONS, PAPER_SIZE_MM } from "@/lib/types";
+import { DEFAULT_FONT_SIZE, PAPER_OPTIONS, PAPER_SIZE_MM } from "@/lib/types";
 import type { DesignElement, DesignPage, EditorDesign, Paper } from "@/lib/types";
 import Canvas from "./canvas/Canvas";
 import ExportPdf from "./export/ExportPdf";
 import PageStrip from "./panels/PageStrip";
 import ShortcutHelp from "./panels/ShortcutHelp";
 import StatusBar from "./panels/StatusBar";
+import FeedbackModal from "./panels/FeedbackModal";
+import type { JenisMasukan } from "./panels/FeedbackModal";
 import Toolbox from "./toolbar/Toolbox";
 import EditorSidebar from "./toolbar/EditorSidebar";
 import type { SidebarTab } from "./toolbar/EditorSidebar";
@@ -19,12 +22,14 @@ import Icon from "./ui/Icon";
 import type { IconName } from "./ui/Icon";
 import { cloneElement, moveLayer, ubahElemen } from "./core/elementOps";
 import type { LayerOp } from "./core/elementOps";
-import { calculateTextFlow } from "./core/textFlow";
+import { calculateTextFlow, calculateTextHeightMm } from "./core/textFlow";
+import { measureTextWidthMm } from "./core/textMetrics";
 import {
   LABEL_STATUS,
   MAX_SCALE,
   MIN_SCALE,
   PX_PER_MM,
+  PT_TO_MM,
   clamp,
   round,
   uid,
@@ -124,6 +129,7 @@ export default function Editor({ design }: { design: EditorDesign }) {
   const [scale, setScale] = useState(1.2); // px per mm
   const [status, setStatus] = useState<Status>("tersimpan");
   const [helpOpen, setHelpOpen] = useState(false);
+  const [masukanTerbuka, setMasukanTerbuka] = useState<JenisMasukan | null>(null);
   const sudahAturSkalaAwal = useRef(false);
   const hydrated = useSyncExternalStore(
     subscribeToClient,
@@ -138,6 +144,7 @@ export default function Editor({ design }: { design: EditorDesign }) {
 
   const papan = useRef<DesignElement | null>(null);
   const geserTempel = useRef(0);
+  const sesiEditTeks = useRef(0);
 
   // Undo bisa mengurangi jumlah halaman, jadi indeks aktif dijaga di batas
   const hal = Math.min(active, pages.length - 1);
@@ -158,10 +165,11 @@ export default function Editor({ design }: { design: EditorDesign }) {
   );
   const textBoxes = elements.filter((el) => el.type === "text");
   const textBoxOptions =
-    selected?.type === "text"
+    selected?.type === "text" && (selected.textKind ?? "paragraph") !== "artistic"
       ? textBoxes
           .map((box, index) => ({ box, label: `Kotak teks ${index + 1}` }))
           .filter(({ box }) => {
+            if ((box.textKind ?? "paragraph") === "artistic") return false;
             if (box.id === selected.id) return false;
             if (box.id === selected.nextTextBoxId) return true;
             const hasIncoming = textBoxes.some(
@@ -298,7 +306,7 @@ export default function Editor({ design }: { design: EditorDesign }) {
           setPesan(
             konflik
               ? "Desain berubah di tab lain. Muat ulang untuk mengambil versi terbaru."
-              : "Gagal menyimpan ke Supabase. Tekan Ctrl+S untuk mencoba lagi."
+              : "Gagal menyimpan ke Supabase. Tekan Ctrl/Cmd+S untuk mencoba lagi."
           );
           return false;
         }
@@ -434,23 +442,97 @@ export default function Editor({ design }: { design: EditorDesign }) {
     setPesan("");
   }, [selectedIds]);
 
+  function aturEditing(id: string | null) {
+    if (id && id !== editingId) sesiEditTeks.current += 1;
+    setEditingId(id);
+  }
+
   const updateElement = useCallback(
     (id: string, patch: Partial<DesignElement>) => {
+      const element = elements.find((item) => item.id === id);
+      let perubahan: Partial<DesignElement> = {
+        ...patch,
+        ...(patch.text !== undefined
+          ? { text: patch.text.replace(/\r\n?/g, "\n") }
+          : {}),
+      };
+      if (element?.type === "text") {
+        const selanjutnya = { ...element, ...perubahan };
+        const text = selanjutnya.text ?? "";
+        const textBerubah =
+          patch.text !== undefined ||
+          patch.fontSize !== undefined ||
+          patch.fontFamily !== undefined ||
+          patch.bold !== undefined ||
+          patch.italic !== undefined ||
+          patch.columns !== undefined ||
+          patch.textKind !== undefined;
+
+        if (
+          (selanjutnya.textKind ?? "paragraph") === "artistic" &&
+          textBerubah
+        ) {
+          const baris = text.split("\n");
+          perubahan = {
+            ...perubahan,
+            w: Math.max(
+              5,
+              ...baris.map((barisTeks) =>
+                measureTextWidthMm(selanjutnya, barisTeks)
+              )
+            ),
+            h:
+              Math.max(1, baris.length) *
+              (selanjutnya.fontSize ?? DEFAULT_FONT_SIZE) *
+              PT_TO_MM *
+              1.3,
+          };
+        } else {
+          if (
+            patch.h !== undefined &&
+            patch.h !== element.h &&
+            patch.textKind === undefined &&
+            element.textAutoHeight
+          ) {
+            perubahan.textAutoHeight = false;
+          }
+          const textAutoHeight =
+            perubahan.textAutoHeight ?? element.textAutoHeight ?? false;
+          const target = { ...selanjutnya, ...perubahan };
+          if (
+            textAutoHeight &&
+            !target.nextTextBoxId &&
+            (textBerubah || patch.w !== undefined)
+          ) {
+            perubahan.h = calculateTextHeightMm(target, text);
+          }
+        }
+      }
+      const satuSesiEdit = editingId !== null && patch.text !== undefined;
+      const kunci = satuSesiEdit
+        ? `text-edit:${id}:${sesiEditTeks.current}`
+        : `${id}|${Object.keys(perubahan).sort().join(",")}`;
       setPages(
         (prev) =>
           ubahElemen(prev, hal, (els) =>
-            els.map((el) => (el.id === id ? { ...el, ...patch } : el))
+            els.map((el) => (el.id === id ? { ...el, ...perubahan } : el))
           ),
-        `${id}|${Object.keys(patch).sort().join(",")}`
+        kunci,
+        satuSesiEdit
       );
     },
-    [hal, setPages]
+    [editingId, elements, hal, setPages]
   );
 
   const tambahElemen = useCallback(
     (el: DesignElement) => {
       // kunci sama dengan drag-ukuran, supaya menggambar objek jadi satu langkah undo
-      setPages((prev) => ubahElemen(prev, hal, (els) => [...els, el]), `${el.id}|h,w,x,y`);
+      const kunci = el.type === "text"
+        ? `${el.id}|h,textAutoHeight,textKind,w,x,y`
+        : el.type === "line"
+          ? `${el.id}|h,lineFlip,w,x,y`
+          : `${el.id}|h,w,x,y`;
+      setPages((prev) => ubahElemen(prev, hal, (els) => [...els, el]), kunci);
       setSelectedId(el.id);
       setSelectedIds([el.id]);
       setMode("ukuran");
@@ -586,7 +668,11 @@ export default function Editor({ design }: { design: EditorDesign }) {
 
   function hubungkanTeks(id: string, nextId: string | undefined) {
     const box = textBoxes.find((el) => el.id === id);
-    if (!box || box.nextTextBoxId === nextId) return;
+    if (
+      !box ||
+      (box.textKind ?? "paragraph") === "artistic" ||
+      box.nextTextBoxId === nextId
+    ) return;
     if (nextId && !textBoxOptions.some((el) => el.id === nextId)) {
       setPesan("Kotak teks tujuan tidak dapat dihubungkan.");
       return;
@@ -630,6 +716,27 @@ export default function Editor({ design }: { design: EditorDesign }) {
       });
       atur(target.sourceId, { text: "" });
       atur(id, { nextTextBoxId: nextId });
+    }
+
+    const elemenSetelahPerubahan = elements.map((el) => ({
+      ...el,
+      ...perubahan.get(el.id),
+    }));
+    const kotakMasuk = new Set(
+      elemenSetelahPerubahan
+        .map((el) => el.nextTextBoxId)
+        .filter((targetId): targetId is string => !!targetId)
+    );
+    for (const el of elemenSetelahPerubahan) {
+      if (
+        perubahan.has(el.id) &&
+        el.type === "text" &&
+        el.textAutoHeight &&
+        !el.nextTextBoxId &&
+        !kotakMasuk.has(el.id)
+      ) {
+        atur(el.id, { h: calculateTextHeightMm(el, el.text ?? "") });
+      }
     }
 
     setPages((prev) =>
@@ -718,7 +825,7 @@ export default function Editor({ design }: { design: EditorDesign }) {
   }
 
   function ubahTeks() {
-    if (selected?.type === "text") setEditingId(selected.id);
+    if (selected?.type === "text") aturEditing(selected.id);
   }
 
   function gayaTeks(k: "bold" | "italic" | "underline") {
@@ -738,13 +845,48 @@ export default function Editor({ design }: { design: EditorDesign }) {
     else pilih(null);
   }
 
-  function aktivasiObjek(id: string, clickCount: number) {
+  function aktivasiObjek(
+    id: string,
+    clickCount: number,
+    canCycleMode: boolean
+  ) {
     if (tool !== "pilih") return;
     const element = elements.find((el) => el.id === id);
-    if (clickCount === 2 && element?.type === "text") setEditingId(id);
-    else if (clickCount === 2) setMode("putar");
-    else if (clickCount >= 3) setMode(element?.type === "rect" ? "sudut" : "ukuran");
+    if (clickCount >= 2 && element?.type === "text") aturEditing(id);
+    else if (canCycleMode && element) {
+      siklusMode(id);
+    }
   }
+
+  function modeMendukungSudut(element: DesignElement) {
+    return element.type === "rect" || element.type === "image";
+  }
+
+  function aturMode(nextMode: Mode) {
+    if (selectedIds.length !== 1 || !selected || tool !== "pilih") return;
+    if (nextMode === "sudut" && !modeMendukungSudut(selected)) return;
+    setMode(nextMode);
+  }
+
+  function siklusMode(id: string) {
+    const element = elements.find((item) => item.id === id);
+    if (
+      !element ||
+      selectedIds.length !== 1 ||
+      selectedId !== id ||
+      editingId ||
+      tool !== "pilih"
+    ) {
+      return;
+    }
+    setMode((current) => {
+      if (current === "ukuran") return "putar";
+      if (current === "putar" && modeMendukungSudut(element)) return "sudut";
+      return "ukuran";
+    });
+  }
+
+  const tutupMasukan = useCallback(() => setMasukanTerbuka(null), []);
 
   async function bukaPreview() {
     const tab = window.open("about:blank", "_blank");
@@ -831,30 +973,40 @@ export default function Editor({ design }: { design: EditorDesign }) {
     deselect: batal,
     edit: ubahTeks,
     style: gayaTeks,
+    mode: aturMode,
     zoom,
     fit: () => setScale(fitScale()),
     save: kirim,
     help: () => setHelpOpen(true),
   };
-  useShortcuts(aksi, !helpOpen);
+  useShortcuts(aksi, !helpOpen && masukanTerbuka === null);
 
   return (
     <div className="flex h-dvh select-none flex-col overflow-hidden bg-stone-100 text-stone-900 print:hidden">
-      <header className="flex h-12 shrink-0 items-center gap-1 border-b border-black/10 bg-white px-2">
+      <header className="relative flex h-12 shrink-0 items-center gap-1 border-b-2 border-violet-900 bg-[#faf8f3] px-2">
         <Link
           href="/dasbor"
           title="Kembali ke dasbor"
           aria-label="Kembali ke dasbor"
-          className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-black/5 bg-white px-2 text-stone-700 shadow-sm hover:bg-stone-50"
+          className="group flex h-9 shrink-0 items-center gap-1 rounded-lg px-1 text-stone-700 transition hover:bg-violet-100/60"
         >
           <Icon name="chevronLeft" size={18} />
-          <span className="text-xs font-medium">Kembali</span>
-        </Link>
-        <span className="hidden shrink-0 text-base font-bold sm:inline">
-          <span className="inline-flex h-8 items-center rounded-lg border border-black/5 bg-white px-2.5 shadow-sm">
-            Lay<span className="text-indigo-600">oot</span>
+          <Image
+            src="/logo/logo.png"
+            alt=""
+            aria-hidden="true"
+            width={32}
+            height={32}
+            priority
+            className="h-8 w-8 object-contain transition-transform duration-200 group-hover:-rotate-6 group-hover:scale-110"
+          />
+          <span className="hidden text-lg font-bold text-stone-900 sm:inline">
+            Lay
+            <span className="bg-gradient-to-r from-violet-600 to-fuchsia-500 bg-clip-text text-transparent">
+              oot
+            </span>
           </span>
-        </span>
+        </Link>
         <div className="flex min-w-0 flex-1 items-center gap-1">
           <Icon name="fileText" size={16} className="shrink-0 text-stone-500" />
           <input
@@ -922,14 +1074,14 @@ export default function Editor({ design }: { design: EditorDesign }) {
           <HeaderIconButton
             icon="undo"
             label="Urungkan"
-            shortcut="Ctrl+Z"
+            shortcut="Ctrl/Cmd+Z"
             disabled={!canUndo}
             onClick={undo}
           />
           <HeaderIconButton
             icon="redo"
             label="Ulangi"
-            shortcut="Ctrl+Y"
+            shortcut="Ctrl/Cmd+Y"
             disabled={!canRedo}
             onClick={redo}
           />
@@ -970,6 +1122,10 @@ export default function Editor({ design }: { design: EditorDesign }) {
           </span>
         </div>
         <ExportPdf title={title} pages={pages} size={size} />
+        <div
+          className="absolute inset-x-0 -bottom-[2px] h-[2px] bg-gradient-to-r from-violet-600 via-fuchsia-500 to-indigo-500"
+          aria-hidden="true"
+        />
       </header>
 
       <div className="flex min-h-0 flex-1 gap-2 p-2">
@@ -995,7 +1151,8 @@ export default function Editor({ design }: { design: EditorDesign }) {
           onToolDone={selesaiAlat}
           onDropImage={unggahKeCanvas}
           onActivate={aktivasiObjek}
-          onEdit={setEditingId}
+          onCycleMode={siklusMode}
+          onEdit={aturEditing}
           onScale={setScale}
         />
         <EditorSidebar
@@ -1034,6 +1191,28 @@ export default function Editor({ design }: { design: EditorDesign }) {
               onDelete={hapusHalaman}
             />
           </div>
+          <div className="mr-1 flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setMasukanTerbuka("masalah")}
+              title="Laporkan masalah"
+              aria-label="Laporkan masalah"
+              className="flex h-7 items-center gap-1 rounded-lg border border-stone-300 bg-white px-1.5 text-[11px] font-semibold text-stone-700 hover:bg-stone-200 sm:px-2"
+            >
+              <Icon name="help" size={14} />
+              <span className="hidden sm:inline">Laporkan masalah</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMasukanTerbuka("saran")}
+              title="Beri saran"
+              aria-label="Beri saran"
+              className="flex h-7 items-center gap-1 rounded-lg border border-stone-300 bg-white px-1.5 text-[11px] font-semibold text-stone-700 hover:bg-stone-200 sm:px-2"
+            >
+              <Icon name="text" size={14} />
+              <span className="hidden sm:inline">Beri saran</span>
+            </button>
+          </div>
           <button
             type="button"
             onClick={bukaPreview}
@@ -1061,15 +1240,27 @@ export default function Editor({ design }: { design: EditorDesign }) {
         <StatusBar
           tool={tool}
           mode={mode}
-          selected={selected}
+          selected={selectedIds.length === 1 ? selected : null}
+          selectedCount={selectedIds.length}
+          showModeControls={
+            selectedIds.length === 1 && tool === "pilih" && editingId === null
+          }
           pesan={pesan}
           zoom={Math.round((scale / PX_PER_MM) * 100)}
           onZoom={zoom}
           onFit={() => setScale(fitScale())}
+          onMode={aturMode}
         />
       </footer>
 
       {helpOpen && <ShortcutHelp onClose={() => setHelpOpen(false)} />}
+      {masukanTerbuka && (
+        <FeedbackModal
+          jenis={masukanTerbuka}
+          designId={design.id}
+          onClose={tutupMasukan}
+        />
+      )}
     </div>
   );
 }

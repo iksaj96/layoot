@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { connection } from "next/server";
 import { notFound, redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase-server";
 import Editor from "@/app/editor/components/Editor";
@@ -9,6 +10,8 @@ export const metadata = { title: "Editor — Layoot" };
 type Props = { params: Promise<{ id: string }> };
 
 async function EditorIsi({ params }: Props) {
+  await connection();
+
   const { id } = await params;
   const supabase = await createServerSupabase();
 

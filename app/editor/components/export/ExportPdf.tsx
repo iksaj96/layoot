@@ -52,6 +52,10 @@ export function CetakElemen({
         transform: `rotate(${el.rotation ?? 0}deg) scaleX(${el.flipX ? -1 : 1}) scaleY(${el.flipY ? -1 : 1})`,
         transformOrigin: `${((0.5 - crop.x) / crop.w) * 100}% ${((0.5 - crop.y) / crop.h) * 100}%`,
         overflow: "hidden",
+        borderRadius:
+          el.type === "image"
+            ? borderRadiusCss(el, (mm) => `${mm}mm`)
+            : undefined,
       }}
     >
       <div
@@ -123,8 +127,10 @@ export function CetakElemen({
             width: "100%",
             height: "100%",
             overflow: "hidden",
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-word",
+            whiteSpace:
+              (el.textKind ?? "paragraph") === "artistic" ? "pre" : "pre-wrap",
+            wordBreak:
+              (el.textKind ?? "paragraph") === "artistic" ? "normal" : "break-word",
             lineHeight: 1.3,
             fontFamily: fontCss(el.fontFamily),
             fontSize: `${el.fontSize ?? DEFAULT_FONT_SIZE}pt`,
@@ -132,7 +138,10 @@ export function CetakElemen({
             fontStyle: el.italic ? "italic" : "normal",
             textDecoration: el.underline ? "underline" : "none",
             textAlign: el.align ?? "left",
-            columnCount: Math.max(1, Math.min(6, Math.floor(el.columns ?? 1))),
+            columnCount:
+              (el.textKind ?? "paragraph") === "artistic"
+                ? 1
+                : Math.max(1, Math.min(6, Math.floor(el.columns ?? 1))),
             columnFill: "auto",
             columnGap: "1em",
             color: el.color ?? "#1c1917",

@@ -1,72 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { CSSProperties, MouseEvent, TouchEvent } from "react";
 import { useRouter } from "next/navigation";
-import type { EditorDesign } from "@/lib/types";
+import { PAPER_SIZE_MM } from "@/lib/types";
+import type { DesignElement, DesignPage, EditorDesign } from "@/lib/types";
+import ElementView from "../canvas/ElementView";
+import { calculateTextFlow } from "../core/textFlow";
+import { PX_PER_MM } from "../core/utils";
+import { useGoogleFonts } from "../hooks/useGoogleFonts";
 
-/* -------------------------------------------------------------------------- */
-/*  Tipe longgar untuk isi halaman                                            */
-/*  Sesuaikan dengan struktur `pages` di editor kamu bila berbeda.            */
-/* -------------------------------------------------------------------------- */
-
-type LooseElement = {
-  id?: string;
-  type?: string;
-  x?: number;
-  y?: number;
-  width?: number;
-  height?: number;
-  rotation?: number;
-  opacity?: number;
-  text?: string;
-  content?: string;
-  src?: string;
-  url?: string;
-  fill?: string;
-  color?: string;
-  fontSize?: number;
-  fontFamily?: string;
-  fontWeight?: number | string;
-  fontStyle?: string;
-  textAlign?: CSSProperties["textAlign"];
-  lineHeight?: number | string;
-  borderRadius?: number;
+const subscribeToFonts = (notify: () => void) => {
+  if (typeof document === "undefined") return () => {};
+  document.fonts.addEventListener("loadingdone", notify);
+  return () => document.fonts.removeEventListener("loadingdone", notify);
 };
-
-type LoosePage = {
-  id?: string;
-  background?: string;
-  bg?: string;
-  elements?: LooseElement[];
-  objects?: LooseElement[];
-};
-
-/* -------------------------------------------------------------------------- */
-/*  Ukuran kertas                                                             */
-/* -------------------------------------------------------------------------- */
-
-const MM_TO_PX = 96 / 25.4;
-
-const PAPER_MM: Record<string, [number, number]> = {
-  a3: [297, 420],
-  a4: [210, 297],
-  a5: [148, 210],
-  a6: [105, 148],
-  b5: [176, 250],
-  letter: [216, 279],
-  legal: [216, 356],
-};
-
-function getPageSize(paper: string, orientation: string) {
-  const [w, h] = PAPER_MM[paper.toLowerCase()] ?? PAPER_MM.a4;
-  const landscape = orientation.toLowerCase().startsWith("land");
-  const [pw, ph] = landscape ? [h, w] : [w, h];
-  return {
-    width: Math.round(pw * MM_TO_PX),
-    height: Math.round(ph * MM_TO_PX),
-  };
-}
+const getFontsSnapshot = () =>
+  typeof document !== "undefined" && document.fonts.status === "loaded";
+const getServerFontsSnapshot = () => false;
 
 /* -------------------------------------------------------------------------- */
 /*  Hook ukuran elemen                                                        */
@@ -91,82 +42,27 @@ function useElementSize<T extends HTMLElement>() {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Render isi halaman                                                        */
+/*  Render isi halaman memakai koordinat dan komponen yang sama dengan editor */
 /* -------------------------------------------------------------------------- */
-
-function ElementView({ el }: { el: LooseElement }) {
-  const type = (el.type ?? "").toLowerCase();
-  const src = el.src ?? el.url;
-
-  const base: CSSProperties = {
-    position: "absolute",
-    left: el.x ?? 0,
-    top: el.y ?? 0,
-    width: el.width,
-    height: el.height,
-    opacity: el.opacity,
-    transform: el.rotation ? `rotate(${el.rotation}deg)` : undefined,
-    borderRadius: el.borderRadius,
-  };
-
-  if (type === "image" || (src && type !== "text")) {
-    return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={src}
-        alt=""
-        draggable={false}
-        style={{ ...base, objectFit: "cover" }}
-      />
-    );
-  }
-
-  if (type === "text") {
-    return (
-      <div
-        style={{
-          ...base,
-          color: el.color ?? "#1c1917",
-          fontSize: el.fontSize ?? 16,
-          fontFamily: el.fontFamily,
-          fontWeight: el.fontWeight,
-          fontStyle: el.fontStyle,
-          textAlign: el.textAlign,
-          lineHeight: el.lineHeight,
-          whiteSpace: "pre-wrap",
-          overflow: "hidden",
-        }}
-      >
-        {el.text ?? el.content}
-      </div>
-    );
-  }
-
-  // bentuk (rect, ellipse, shape, dll.)
-  return (
-    <div
-      style={{
-        ...base,
-        background: el.fill ?? el.color,
-        borderRadius: type === "ellipse" || type === "circle" ? "50%" : el.borderRadius,
-      }}
-    />
-  );
-}
 
 function PageContent({
   page,
   baseWidth,
   baseHeight,
   scale,
+  fontsReady,
 }: {
-  page: LoosePage | null;
+  page: DesignPage | null;
   baseWidth: number;
   baseHeight: number;
   scale: number;
+  fontsReady: boolean;
 }) {
+  const textFlow = useMemo(
+    () => calculateTextFlow(page?.elements ?? [], fontsReady),
+    [fontsReady, page?.elements]
+  );
   if (!page) return null;
-  const elements = page.elements ?? page.objects ?? [];
 
   return (
     <div
@@ -180,8 +76,29 @@ function PageContent({
         transformOrigin: "top left",
       }}
     >
-      {elements.map((el, i) => (
-        <ElementView key={el.id ?? i} el={el} />
+      {page.elements.map((el: DesignElement) => (
+        <ElementView
+          key={el.id}
+          el={el}
+          scale={PX_PER_MM}
+          selected={false}
+          showHandles={false}
+          showModeHandle={false}
+          editing={false}
+          textFlow={textFlow[el.id]}
+          cursor="default"
+          mode="ukuran"
+          handleScale={1}
+          canCycleMode={false}
+          onDown={() => {}}
+          onHandleDown={() => {}}
+          onRadiusDown={() => {}}
+          onRotateDown={() => {}}
+          onActivate={() => {}}
+          onCycleMode={() => {}}
+          onText={() => {}}
+          onEditEnd={() => {}}
+        />
       ))}
     </div>
   );
@@ -191,9 +108,9 @@ function PageContent({
 /*  Satu sisi lembaran (depan / belakang)                                     */
 /* -------------------------------------------------------------------------- */
 
-function isPageEmpty(page: LoosePage | null) {
+function isPageEmpty(page: DesignPage | null) {
   if (!page) return true;
-  return (page.elements ?? page.objects ?? []).length === 0;
+  return page.elements.length === 0;
 }
 
 function Face({
@@ -205,16 +122,18 @@ function Face({
   baseWidth,
   baseHeight,
   scale,
+  fontsReady,
   roundOuter,
 }: {
   side: "front" | "back";
-  page: LoosePage | null;
+  page: DesignPage | null;
   num: number | null;
   showNumber: boolean;
   render: boolean;
   baseWidth: number;
   baseHeight: number;
   scale: number;
+  fontsReady: boolean;
   roundOuter: boolean;
 }) {
   const empty = isPageEmpty(page);
@@ -227,7 +146,7 @@ function Face({
     position: "absolute",
     inset: 0,
     overflow: "hidden",
-    background: page?.background ?? page?.bg ?? "#fffdf8",
+    background: "#fffdf8",
     backfaceVisibility: "hidden",
     WebkitBackfaceVisibility: "hidden",
     transform: isFront ? undefined : "rotateY(180deg)",
@@ -252,6 +171,7 @@ function Face({
           baseWidth={baseWidth}
           baseHeight={baseHeight}
           scale={scale}
+          fontsReady={fontsReady}
         />
       )}
 
@@ -338,19 +258,25 @@ const JUMP_STAGGER_MS = 80;
 
 export default function BookPreview({ design }: { design: EditorDesign }) {
   const router = useRouter();
-
-  const pages = useMemo(
-    () => (design.pages ?? []) as unknown as LoosePage[],
-    [design.pages],
+  useGoogleFonts();
+  const fontsReady = useSyncExternalStore(
+    subscribeToFonts,
+    getFontsSnapshot,
+    getServerFontsSnapshot
   );
 
+  const pages = useMemo(() => design.pages ?? [], [design.pages]);
+
   const base = useMemo(
-    () =>
-      getPageSize(
-        String((design as { paper?: string }).paper ?? "a4"),
-        String((design as { orientation?: string }).orientation ?? "portrait"),
-      ),
-    [design],
+    () => {
+      const paperSize = PAPER_SIZE_MM[design.paper];
+      const width =
+        design.orientation === "landscape" ? paperSize.h : paperSize.w;
+      const height =
+        design.orientation === "landscape" ? paperSize.w : paperSize.h;
+      return { width: width * PX_PER_MM, height: height * PX_PER_MM };
+    },
+    [design.orientation, design.paper],
   );
 
   // Susunan seperti buku sungguhan:
@@ -358,7 +284,7 @@ export default function BookPreview({ design }: { design: EditorDesign }) {
   // Bila jumlah halaman ganjil, satu halaman kosong disisipkan di dalam,
   // tepat sebelum sampul belakang, supaya sampul belakang tetap halaman terakhir desain.
   const leaves = useMemo(() => {
-    const list: { page: LoosePage | null; num: number | null }[] = pages.map(
+    const list: { page: DesignPage | null; num: number | null }[] = pages.map(
       (page, i) => ({ page, num: i + 1 }),
     );
     if (list.length >= 3 && list.length % 2 === 1) {
@@ -581,6 +507,7 @@ export default function BookPreview({ design }: { design: EditorDesign }) {
                         baseWidth={base.width}
                         baseHeight={base.height}
                         scale={scale}
+                        fontsReady={fontsReady}
                         roundOuter
                       />
                       <Face
@@ -592,6 +519,7 @@ export default function BookPreview({ design }: { design: EditorDesign }) {
                         baseWidth={base.width}
                         baseHeight={base.height}
                         scale={scale}
+                        fontsReady={fontsReady}
                         roundOuter
                       />
                     </div>

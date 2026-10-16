@@ -129,21 +129,21 @@ export default function PropertiesPanel({
                   <IconButton
                     icon="bold"
                     label="Tebal"
-                    shortcut="Ctrl+B"
+                    shortcut="Ctrl/Cmd+B"
                     active={!!selected.bold}
                     onClick={() => onChange(selected.id, { bold: !selected.bold })}
                   />
                   <IconButton
                     icon="italic"
                     label="Miring"
-                    shortcut="Ctrl+I"
+                    shortcut="Ctrl/Cmd+I"
                     active={!!selected.italic}
                     onClick={() => onChange(selected.id, { italic: !selected.italic })}
                   />
                   <IconButton
                     icon="underline"
                     label="Garis bawah"
-                    shortcut="Ctrl+U"
+                    shortcut="Ctrl/Cmd+U"
                     active={!!selected.underline}
                     onClick={() =>
                       onChange(selected.id, { underline: !selected.underline })
@@ -186,22 +186,24 @@ export default function PropertiesPanel({
                   onChange(selected.id, { columns: Math.max(1, Math.min(6, Math.floor(v))) })
                 }
               />
-              <label className="flex shrink-0 items-center gap-1 text-xs font-semibold text-stone-600">
-                Lanjut ke
-                <select
-                  aria-label="Lanjutkan teks ke kotak teks"
-                  value={selected.nextTextBoxId ?? ""}
-                  onChange={(e) => onLinkText(selected.id, e.target.value || undefined)}
-                  className="max-w-40 rounded border border-stone-300 bg-white px-1.5 py-1 text-xs text-stone-900"
-                >
-                  <option value="">Tidak ada</option>
-                  {textBoxOptions.map((box) => (
-                    <option key={box.id} value={box.id}>
-                      {box.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {(selected.textKind ?? "paragraph") !== "artistic" && (
+                <label className="flex shrink-0 items-center gap-1 text-xs font-semibold text-stone-600">
+                  Lanjut ke
+                  <select
+                    aria-label="Lanjutkan teks ke kotak teks"
+                    value={selected.nextTextBoxId ?? ""}
+                    onChange={(e) => onLinkText(selected.id, e.target.value || undefined)}
+                    className="max-w-40 rounded border border-stone-300 bg-white px-1.5 py-1 text-xs text-stone-900"
+                  >
+                    <option value="">Tidak ada</option>
+                    {textBoxOptions.map((box) => (
+                      <option key={box.id} value={box.id}>
+                        {box.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <ColorPicker
                 label="Warna teks"
                 value={selected.color ?? "#1c1917"}
@@ -315,6 +317,17 @@ export default function PropertiesPanel({
           {selected.type === "image" && (
             <>
               <span className="w-full text-xs font-bold text-stone-600">Gambar</span>
+              <NumberField
+                label="Sudut"
+                value={radiusOf(selected)}
+                min={0}
+                max={Math.min(selected.w, selected.h) / 2}
+                step={1}
+                width="w-14"
+                onChange={(value) =>
+                  onChange(selected.id, { radius: Math.max(0, value) })
+                }
+              />
               <IconButton
                 icon="fill"
                 label="Isi penuh"
@@ -335,10 +348,10 @@ export default function PropertiesPanel({
           <section className="flex flex-wrap items-center gap-1 border-t border-stone-200 pt-2">
             <span className="w-full text-xs font-bold text-stone-600">Susunan & aksi</span>
             <IconButton icon="toFront" label="Ke paling atas" shortcut="Shift+PgUp" onClick={() => onLayer("atas")} />
-            <IconButton icon="arrowUp" label="Naikkan satu lapisan" shortcut="Ctrl+]" onClick={() => onLayer("naik")} />
-            <IconButton icon="arrowDown" label="Turunkan satu lapisan" shortcut="Ctrl+[" onClick={() => onLayer("turun")} />
+            <IconButton icon="arrowUp" label="Naikkan satu lapisan" shortcut="Ctrl/Cmd+]" onClick={() => onLayer("naik")} />
+            <IconButton icon="arrowDown" label="Turunkan satu lapisan" shortcut="Ctrl/Cmd+[" onClick={() => onLayer("turun")} />
             <IconButton icon="toBack" label="Ke paling bawah" shortcut="Shift+PgDn" onClick={() => onLayer("bawah")} />
-            <IconButton icon="copy" label="Duplikat" shortcut="Ctrl+D" onClick={onDuplicate} />
+            <IconButton icon="copy" label="Duplikat" shortcut="Ctrl/Cmd+D" onClick={onDuplicate} />
             <IconButton icon="trash" label="Hapus" shortcut="Del" danger onClick={onDelete} />
           </section>
         </>

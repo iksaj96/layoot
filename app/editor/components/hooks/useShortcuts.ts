@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import type { LayerOp } from "../core/elementOps";
 import type { AlignAction, Tool } from "../core/utils";
+import type { Mode } from "../core/utils";
 import { SHORTCUTS } from "../core/shortcuts";
 
 export type AksiPintasan = {
@@ -20,6 +21,7 @@ export type AksiPintasan = {
   cycle: (arah: 1 | -1) => void;
   deselect: () => void;
   edit: () => void;
+  mode: (mode: Mode) => void;
   style: (k: "bold" | "italic" | "underline") => void;
   zoom: (faktor: number) => void;
   fit: () => void;
@@ -40,22 +42,11 @@ export function useShortcuts(aksi: AksiPintasan, aktif = true) {
       const a = ref.current;
       const ctrl = e.ctrlKey || e.metaKey;
       const k = e.key.toLowerCase();
-      const t = e.target as HTMLElement | null;
+      const t = e.target instanceof HTMLElement ? e.target : null;
       const diInput = !!t?.closest("input, textarea, select") || !!t?.isContentEditable;
+      const diEditorTeks = !!t?.closest("[data-text-editor]");
 
       if (e.repeat && !e.key.startsWith("Arrow")) return;
-
-      // Ctrl+S berlaku di mana pun, termasuk saat mengetik judul
-      if (ctrl && k === "s") {
-        e.preventDefault();
-        e.stopPropagation();
-        a.save();
-        return;
-      }
-
-      // Jangan ganggu pengetikan di kolom input
-      if (diInput) return;
-      const diTombol = !!t?.closest("button, a");
 
       const jalankan = (fn: () => void) => {
         e.preventDefault();
@@ -63,13 +54,31 @@ export function useShortcuts(aksi: AksiPintasan, aktif = true) {
         fn();
       };
 
+      if (ctrl && k === "s") {
+        jalankan(a.save);
+        return;
+      }
+
+      if (diEditorTeks) {
+        if (ctrl && k === "b") jalankan(() => a.style("bold"));
+        else if (ctrl && k === "i") jalankan(() => a.style("italic"));
+        else if (ctrl && k === "u") jalankan(() => a.style("underline"));
+        return;
+      }
+
+      if (ctrl) {
+        if (k === "z") return jalankan(e.shiftKey ? a.redo : a.undo);
+        if (k === "y") return jalankan(a.redo);
+      }
+
+      if (diInput) return;
+      const diTombol = !!t?.closest("button, a");
+
       if (ctrl) {
         if (e.code === "BracketRight") jalankan(() => a.layer(e.shiftKey ? "atas" : "naik"));
         else if (e.code === "BracketLeft") jalankan(() => a.layer(e.shiftKey ? "bawah" : "turun"));
         else if (e.code === "PageUp") jalankan(() => a.layer("naik"));
         else if (e.code === "PageDown") jalankan(() => a.layer("turun"));
-        else if (k === "z") jalankan(e.shiftKey ? a.redo : a.undo);
-        else if (k === "y") jalankan(a.redo);
         else if (k === "c") jalankan(a.copy);
         else if (k === "x") jalankan(a.cut);
         else if (k === "v") jalankan(a.paste);
@@ -86,6 +95,9 @@ export function useShortcuts(aksi: AksiPintasan, aktif = true) {
       if (e.altKey) {
         if (e.code === "PageUp") jalankan(() => a.layer("naik"));
         else if (e.code === "PageDown") jalankan(() => a.layer("turun"));
+        else if (e.code === "Digit1") jalankan(() => a.mode("ukuran"));
+        else if (e.code === "Digit2") jalankan(() => a.mode("putar"));
+        else if (e.code === "Digit3") jalankan(() => a.mode("sudut"));
         return;
       }
 
@@ -109,9 +121,11 @@ export function useShortcuts(aksi: AksiPintasan, aktif = true) {
         case "Backspace":
           return jalankan(a.remove);
         case "Escape":
-          return a.deselect();
+          return jalankan(a.deselect);
         case "Enter":
           if (diTombol) return;
+          return jalankan(a.edit);
+        case "F2":
           return jalankan(a.edit);
         case "Tab":
           if (diTombol) return;

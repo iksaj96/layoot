@@ -5,8 +5,9 @@ import { DEFAULT_FONT_SIZE } from "@/lib/types";
 import type { DesignElement } from "@/lib/types";
 import type { TextFlowSegment } from "../core/textFlow";
 import ElementView from "./ElementView";
-import { MAX_SCALE, MIN_SCALE, MIN_SIZE, PX_PER_MM, clamp, round, uid } from "../core/utils";
+import { MAX_SCALE, MIN_SCALE, MIN_SIZE, PX_PER_MM, PT_TO_MM, clamp, round, uid } from "../core/utils";
 import type { Handle, Mode, Tool } from "../core/utils";
+import { measureTextWidthMm } from "../core/textMetrics";
 
 type Props = {
   size: { w: number; h: number };
@@ -23,7 +24,8 @@ type Props = {
   onCreate: (el: DesignElement) => void;
   onToolDone: () => void;
   onDropImage: (file: File, x: number, y: number) => void;
-  onActivate: (id: string, clickCount: number) => void;
+  onActivate: (id: string, clickCount: number, canCycleMode: boolean) => void;
+  onCycleMode: (id: string) => void;
   onEdit: (id: string | null) => void;
   onScale: (s: number) => void;
 };
@@ -44,6 +46,7 @@ export default function Canvas({
   onToolDone,
   onDropImage,
   onActivate,
+  onCycleMode: onCycleModeChange,
   onEdit,
   onScale,
 }: Props) {
@@ -244,7 +247,18 @@ export default function Canvas({
   }, [size.h, size.w, setPanPosition]);
 
   const startDrawAt = useCallback(
-    (clientX: number, clientY: number, complete = false) => {
+    (
+      clientX: number,
+      clientY: number,
+      complete = false,
+      firstMove?: {
+        x: number;
+        y: number;
+        ctrlKey: boolean;
+        metaKey: boolean;
+        shiftKey: boolean;
+      }
+    ) => {
       const wrap = wrapRef.current;
       if (!wrap) return;
       const bounds = wrap.getBoundingClientRect();
@@ -263,6 +277,7 @@ export default function Canvas({
               w: 70,
               h: 14,
               text: "Teks",
+              textKind: "artistic",
               fontSize: DEFAULT_FONT_SIZE,
               bold: false,
               align: "left",
@@ -292,6 +307,10 @@ export default function Canvas({
               }
           : { id, type: "line", x: sx, y: sy, w: 20, h: 0, stroke: "#1c1917", strokeWidth: 0.5 };
 
+      if (baru.type === "text") {
+        baru.w = measureTextWidthMm(baru, baru.text ?? "");
+        baru.h = DEFAULT_FONT_SIZE * PT_TO_MM * 1.3;
+      }
       onCreate(baru);
       if (complete) {
         onToolDone();
@@ -299,36 +318,97 @@ export default function Canvas({
         return;
       }
       let digeser = false;
+      let pointerX = firstMove?.x ?? clientX;
+      let pointerY = firstMove?.y ?? clientY;
+      let ctrl = !!(firstMove?.ctrlKey || firstMove?.metaKey);
+      let shift = !!firstMove?.shiftKey;
 
-      const onMove = (ev: PointerEvent) => {
+      const perbaruiGambar = () => {
         const bounds = wrap.getBoundingClientRect();
         const currentScale = scaleRef.current;
-        const cx = (ev.clientX - bounds.left - panRef.current.x) / currentScale;
-        const cy = (ev.clientY - bounds.top - panRef.current.y) / currentScale;
-        if (!digeser && Math.hypot(cx - sx, cy - sy) < 3) return;
+        const cx = (pointerX - bounds.left - panRef.current.x) / currentScale;
+        const cy = (pointerY - bounds.top - panRef.current.y) / currentScale;
+        if (!digeser && Math.hypot(pointerX - clientX, pointerY - clientY) < 4) return;
         digeser = true;
-        if (baru.type === "line") {
+        if (baru.type === "text") {
           onUpdate(id, {
             x: round(Math.min(sx, cx)),
             y: round(Math.min(sy, cy)),
-            w: round(Math.abs(cx - sx)),
-            h: round(Math.abs(cy - sy)),
-            lineFlip: (cx - sx) * (cy - sy) < 0,
+            w: round(Math.max(MIN_SIZE, Math.abs(cx - sx))),
+            h: round(Math.max(MIN_SIZE, Math.abs(cy - sy))),
+            textKind: "paragraph",
+            textAutoHeight: true,
           });
           return;
         }
+
+        let dx = cx - sx;
+        let dy = cy - sy;
+        const proporsiTerkunci = ctrl;
+        if (proporsiTerkunci) {
+          const ukuran = Math.max(
+            Math.abs(dx),
+            Math.abs(dy),
+            shift ? MIN_SIZE / 2 : MIN_SIZE
+          );
+          dx = Math.sign(dx || 1) * ukuran;
+          dy = Math.sign(dy || 1) * ukuran;
+        }
+
+        if (baru.type === "line") {
+          if (shift) {
+            const akhirX = sx + dx;
+            const akhirY = sy + dy;
+            const awalX = sx - dx;
+            const awalY = sy - dy;
+            onUpdate(id, {
+              x: round(Math.min(awalX, akhirX)),
+              y: round(Math.min(awalY, akhirY)),
+              w: round(Math.abs(akhirX - awalX)),
+              h: round(Math.abs(akhirY - awalY)),
+              lineFlip: (akhirX - awalX) * (akhirY - awalY) < 0,
+            });
+            return;
+          }
+          onUpdate(id, {
+            x: round(Math.min(sx, cx)),
+            y: round(Math.min(sy, cy)),
+            w: round(Math.abs(dx)),
+            h: round(Math.abs(dy)),
+            lineFlip: dx * dy < 0,
+          });
+          return;
+        }
+
+        const tengah = shift;
+        const lebar = tengah ? Math.max(MIN_SIZE, Math.abs(dx) * 2) : Math.max(MIN_SIZE, Math.abs(dx));
+        const tinggi = tengah ? Math.max(MIN_SIZE, Math.abs(dy) * 2) : Math.max(MIN_SIZE, Math.abs(dy));
         onUpdate(id, {
-          x: round(Math.min(sx, cx)),
-          y: round(Math.min(sy, cy)),
-          w: round(Math.max(MIN_SIZE, Math.abs(cx - sx))),
-          h: round(Math.max(MIN_SIZE, Math.abs(cy - sy))),
+          x: round(tengah ? sx - lebar / 2 : Math.min(sx, cx)),
+          y: round(tengah ? sy - tinggi / 2 : Math.min(sy, cy)),
+          w: round(lebar),
+          h: round(tinggi),
         });
       };
 
+      const onMove = (ev: PointerEvent) => {
+        pointerX = ev.clientX;
+        pointerY = ev.clientY;
+        ctrl = ev.ctrlKey || ev.metaKey;
+        shift = ev.shiftKey;
+        perbaruiGambar();
+      };
+      const onKeyChange = (ev: KeyboardEvent) => {
+        ctrl = ev.ctrlKey || ev.metaKey;
+        shift = ev.shiftKey;
+        perbaruiGambar();
+      };
       const onUp = () => {
         window.removeEventListener("pointermove", onMove);
         window.removeEventListener("pointerup", onUp);
         window.removeEventListener("pointercancel", onUp);
+        window.removeEventListener("keydown", onKeyChange);
+        window.removeEventListener("keyup", onKeyChange);
         onToolDone();
         if (baru.type === "text") onEdit(id);
       };
@@ -336,6 +416,9 @@ export default function Canvas({
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
       window.addEventListener("pointercancel", onUp);
+      window.addEventListener("keydown", onKeyChange);
+      window.addEventListener("keyup", onKeyChange);
+      if (firstMove) perbaruiGambar();
     },
     [tool, onCreate, onUpdate, onToolDone, onEdit]
   );
@@ -369,6 +452,7 @@ export default function Canvas({
     const onPointerDown = (e: PointerEvent) => {
       if (e.pointerType === "touch") {
         if (e.target !== wrap && e.target !== workspaceRef.current) return;
+        workspaceRef.current?.focus({ preventScroll: true });
         e.preventDefault();
         e.stopImmediatePropagation();
         sentuhan.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -398,6 +482,7 @@ export default function Canvas({
       }
 
       if (e.button !== 1) return;
+      workspaceRef.current?.focus({ preventScroll: true });
       e.preventDefault();
       e.stopImmediatePropagation();
 
@@ -431,11 +516,11 @@ export default function Canvas({
       const points = [...sentuhan.current.values()];
       const start = sentuhanTunggal.current;
       if (points.length === 1 && start && !start.started &&
-          Math.hypot(e.clientX - start.x, e.clientY - start.y) >= 5 &&
+          Math.hypot(e.clientX - start.x, e.clientY - start.y) >= (tool === "teks" ? 4 : 5) &&
           tool !== "pilih" && tool !== "crop") {
         start.started = true;
         sudahNavigasi.current = true;
-        startDrawAt(start.x, start.y);
+        startDrawAt(start.x, start.y, false, e);
       }
       if (points.length < 2) return;
       const gesture = gestureAwal.current;
@@ -495,6 +580,7 @@ export default function Canvas({
     (e: React.PointerEvent) => {
       if (e.button !== 0) return;
       e.stopPropagation();
+      workspaceRef.current?.focus({ preventScroll: true });
       startDrawAt(e.clientX, e.clientY);
     },
     [startDrawAt]
@@ -505,6 +591,7 @@ export default function Canvas({
     (e: React.PointerEvent, el: DesignElement, aksi: "move" | Handle) => {
       if (e.button !== 0) return;
       e.stopPropagation();
+      workspaceRef.current?.focus({ preventScroll: true });
 
       const sudahDipilih = selectedIds.includes(el.id);
       const shiftSelect = aksi === "move" && e.shiftKey;
@@ -543,6 +630,31 @@ export default function Canvas({
 
         let { x, y, w, h } = o;
         const sudut = aksi === "nw" || aksi === "ne" || aksi === "sw" || aksi === "se";
+        if (
+          sudut &&
+          el.type === "text" &&
+          (el.textKind ?? "paragraph") === "artistic"
+        ) {
+          const perubahanLebar = (aksi.includes("e") ? dx : -dx) / o.w;
+          const perubahanTinggi = (aksi.includes("s") ? dy : -dy) / o.h;
+          const perubahan = Math.abs(perubahanLebar) >= Math.abs(perubahanTinggi)
+            ? perubahanLebar
+            : perubahanTinggi;
+          const fontSize = el.fontSize ?? DEFAULT_FONT_SIZE;
+          const faktor = Math.max(4 / fontSize, 1 + perubahan);
+          w = o.w * faktor;
+          h = o.h * faktor;
+          if (aksi.includes("w")) x = o.x + o.w - w;
+          if (aksi.includes("n")) y = o.y + o.h - h;
+          onUpdate(el.id, {
+            x: round(x),
+            y: round(y),
+            w: round(w),
+            h: round(h),
+            fontSize: round(fontSize * faktor),
+          });
+          return;
+        }
         if (sudut && ev.shiftKey && el.type !== "line") {
           const perubahanLebar = (aksi.includes("e") ? dx : -dx) / o.w;
           const perubahanTinggi = (aksi.includes("s") ? dy : -dy) / o.h;
@@ -569,7 +681,18 @@ export default function Canvas({
             y = o.y + o.h - h;
           }
         }
-        onUpdate(el.id, { x: round(x), y: round(y), w: round(w), h: round(h) });
+        const ubahTinggi = aksi.includes("n") || aksi.includes("s");
+        onUpdate(el.id, {
+          x: round(x),
+          y: round(y),
+          w: round(w),
+          h: ubahTinggi ? round(h) : o.h,
+          ...(ubahTinggi &&
+          el.type === "text" &&
+          (el.textKind ?? "paragraph") === "paragraph"
+            ? { textAutoHeight: false }
+            : {}),
+        });
       };
 
       const onUp = (ev: PointerEvent) => {
@@ -677,9 +800,17 @@ export default function Canvas({
   );
 
   const onEditEnd = useCallback(() => onEdit(null), [onEdit]);
+  const cycleMode = useCallback(
+    (id: string) => {
+      onCycleModeChange(id);
+      workspaceRef.current?.focus({ preventScroll: true });
+    },
+    [onCycleModeChange]
+  );
 
   function onWorkspacePointerDown(e: React.PointerEvent) {
     if (e.target !== e.currentTarget || e.button !== 0) return;
+    workspaceRef.current?.focus({ preventScroll: true });
     if (tool === "pilih") {
       onSelect(null);
       return;
@@ -726,6 +857,7 @@ export default function Canvas({
       {/* Pasteboard tidak memiliki batas scroll; hanya transform workspace yang berubah. */}
       <div
         ref={workspaceRef}
+        tabIndex={-1}
         onPointerDown={onWorkspacePointerDown}
         style={{
           position: "absolute",
@@ -781,15 +913,24 @@ export default function Canvas({
               scale={PX_PER_MM}
               selected={selectedIds.includes(el.id)}
               showHandles={el.id === selectedId}
+              showModeHandle={
+                selectedIds.length === 1 &&
+                el.id === selectedId &&
+                tool === "pilih" &&
+                editingId === null
+              }
               editing={el.id === editingId}
               textFlow={textFlow[el.id]}
               cursor={tool === "pilih" ? "move" : "crosshair"}
               mode={el.id === selectedId ? mode : "ukuran"}
+              handleScale={PX_PER_MM / scale}
+              canCycleMode={selectedIds.length === 1 && tool === "pilih"}
               onDown={onDown}
               onHandleDown={onHandleDown}
               onRadiusDown={onRadiusDown}
               onRotateDown={onRotateDown}
               onActivate={onActivate}
+              onCycleMode={cycleMode}
               onText={onText}
               onEditEnd={onEditEnd}
             />

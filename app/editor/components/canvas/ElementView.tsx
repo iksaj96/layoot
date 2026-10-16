@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useRef } from "react";
 import { DEFAULT_FONT_SIZE } from "@/lib/types";
 import type { DesignElement } from "@/lib/types";
 import { borderRadiusCss, radiusOf } from "../core/elementOps";
@@ -6,21 +6,26 @@ import { fontCss } from "../core/fonts";
 import type { TextFlowSegment } from "../core/textFlow";
 import { PT_TO_MM } from "../core/utils";
 import type { Handle, Mode } from "../core/utils";
+import Icon from "../ui/Icon";
 
 type Props = {
   el: DesignElement;
   scale: number;
   selected: boolean;
   showHandles: boolean;
+  showModeHandle: boolean;
   editing: boolean;
   textFlow?: TextFlowSegment;
   cursor: string;
   mode: Mode;
+  handleScale: number;
+  canCycleMode: boolean;
   onDown: (e: React.PointerEvent, el: DesignElement) => void;
   onHandleDown: (e: React.PointerEvent, el: DesignElement, h: Handle) => void;
   onRadiusDown: (e: React.PointerEvent, el: DesignElement) => void;
   onRotateDown: (e: React.PointerEvent, el: DesignElement) => void;
-  onActivate: (id: string, clickCount: number) => void;
+  onActivate: (id: string, clickCount: number, canCycleMode: boolean) => void;
+  onCycleMode: (id: string) => void;
   onText: (id: string, text: string) => void;
   onEditEnd: () => void;
 };
@@ -41,25 +46,42 @@ const ElementView = memo(function ElementView({
   scale,
   selected,
   showHandles,
+  showModeHandle,
   editing,
   textFlow,
   cursor,
   mode,
+  handleScale,
+  canCycleMode,
   onDown,
   onHandleDown,
   onRadiusDown,
   onRotateDown,
   onActivate,
+  onCycleMode,
   onText,
   onEditEnd,
 }: Props) {
   const isShape = el.type === "rect" || el.type === "ellipse";
+  const isArtisticText =
+    el.type === "text" && (el.textKind ?? "paragraph") === "artistic";
+  const pointerAwal = useRef<{
+    x: number;
+    y: number;
+    terpilih: boolean;
+    canCycleMode: boolean;
+    shift: boolean;
+    bergerak: boolean;
+  } | null>(null);
   const crop = el.crop ?? { x: 0, y: 0, w: 1, h: 1 };
   const sourceElement = el.crop
     ? { ...el, w: el.w / crop.w, h: el.h / crop.h }
     : el;
   const radius = borderRadiusCss(sourceElement, (mm) => `${mm * scale}px`);
-  const modeSudut = selected && mode === "sudut" && el.type === "rect";
+  const modeSudut =
+    selected &&
+    mode === "sudut" &&
+    (el.type === "rect" || el.type === "image");
   const modePutar = selected && mode === "putar";
   const shapeStrokeWidth =
     el.stroke === "transparent" ? 0 : (el.strokeWidth ?? 0.5) * scale;
@@ -87,24 +109,45 @@ const ElementView = memo(function ElementView({
     fontStyle: el.italic ? "italic" : "normal",
     textDecoration: el.underline ? "underline" : "none",
     textAlign: el.align ?? "left",
-    columnCount: Math.max(1, Math.min(6, Math.floor(el.columns ?? 1))),
+    columnCount: isArtisticText
+      ? 1
+      : Math.max(1, Math.min(6, Math.floor(el.columns ?? 1))),
     columnFill: "auto",
     columnGap: "1em",
     color: el.color ?? "#1c1917",
+    whiteSpace: isArtisticText ? "pre" : "pre-wrap",
   };
 
   return (
     <div
-      onPointerDown={(e) => onDown(e, el)}
+      onPointerDown={(e) => {
+        pointerAwal.current = {
+          x: e.clientX,
+          y: e.clientY,
+          terpilih: selected,
+          canCycleMode,
+          shift: e.shiftKey,
+          bergerak: false,
+        };
+        onDown(e, el);
+      }}
+      onPointerMove={(e) => {
+        const awal = pointerAwal.current;
+        if (awal && Math.hypot(e.clientX - awal.x, e.clientY - awal.y) >= 3) {
+          awal.bergerak = true;
+        }
+      }}
       onClick={(e) => {
-        if (editing) return;
+        const awal = pointerAwal.current;
+        pointerAwal.current = null;
         if (
           e.target instanceof Element &&
           e.target.closest("[data-element-handle]")
         ) {
           return;
         }
-        onActivate(el.id, e.detail);
+        if (editing || !awal?.terpilih || awal.shift || awal.bergerak) return;
+        onActivate(el.id, e.detail, awal.canCycleMode);
       }}
       style={{
         position: "absolute",
@@ -115,12 +158,31 @@ const ElementView = memo(function ElementView({
         pointerEvents: "auto",
         cursor: editing ? "text" : cursor,
         touchAction: "none",
-        overflow: "hidden",
         outline: selected ? "1px solid #4f46e5" : "none",
+        borderRadius:
+          el.type === "image"
+            ? borderRadiusCss(el, (mm) => `${mm * scale}px`)
+            : undefined,
+        zIndex: selected ? 2 : undefined,
         transform: `rotate(${el.rotation ?? 0}deg) scaleX(${el.flipX ? -1 : 1}) scaleY(${el.flipY ? -1 : 1})`,
         transformOrigin: `${((0.5 - crop.x) / crop.w) * 100}% ${((0.5 - crop.y) / crop.h) * 100}%`,
+        overflow: "visible",
       }}
     >
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 0,
+          width: viewW,
+          height: viewH,
+          overflow: "hidden",
+          borderRadius:
+            el.type === "image"
+              ? borderRadiusCss(el, (mm) => `${mm * scale}px`)
+              : undefined,
+        }}
+      >
       <div
         style={{
           position: "absolute",
@@ -186,7 +248,9 @@ const ElementView = memo(function ElementView({
       {el.type === "text" &&
         (editing ? (
           <textarea
+            data-text-editor
             autoFocus
+            wrap={isArtisticText ? "off" : "soft"}
             value={textFlow?.fullText ?? el.text ?? ""}
             onChange={(e) => onText(textFlow?.sourceId ?? el.id, e.target.value)}
             onBlur={onEditEnd}
@@ -199,6 +263,8 @@ const ElementView = memo(function ElementView({
             style={{
               ...textStyle,
               columnCount: 1,
+              whiteSpace: isArtisticText ? "pre" : "pre-wrap",
+              overflowWrap: isArtisticText ? "normal" : "break-word",
               resize: "none",
               border: "none",
               outline: "none",
@@ -214,8 +280,7 @@ const ElementView = memo(function ElementView({
             style={{
               ...textStyle,
               overflow: "hidden",
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
+              wordBreak: isArtisticText ? "normal" : "break-word",
             }}
           >
             {textFlow?.text ?? el.text}
@@ -240,13 +305,59 @@ const ElementView = memo(function ElementView({
         />
       )}
       </div>
+      </div>
+
+      {selected && showModeHandle && !editing && canCycleMode && (
+        <button
+          type="button"
+          data-element-handle
+          title={`Mode ${mode}; klik untuk ${mode === "ukuran" ? "putar" : mode === "putar" && (el.type === "rect" || el.type === "image") ? "sudut" : "ukuran"}`}
+          aria-label={`Mode ${mode}. Klik untuk mengganti mode`}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onCycleMode(el.id);
+          }}
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: "50%",
+            transform: "translate(-50%, -50%)",
+            width: 28 * handleScale,
+            height: 28 * handleScale,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 0,
+            border: "2px solid #fff",
+            borderRadius: "50%",
+            background: "#4f46e5",
+            color: "#fff",
+            boxShadow: "0 0 0 1px #1c1917",
+            cursor: "pointer",
+            touchAction: "none",
+            zIndex: 3,
+          }}
+        >
+          <Icon
+            name={mode === "ukuran" ? "rect" : mode === "putar" ? "rotate" : "fill"}
+            size={14 * handleScale}
+          />
+        </button>
+      )}
 
       {/* Titik ubah ukuran */}
       {selected &&
         showHandles &&
         !editing &&
         !modeSudut &&
-        HANDLES.map((hd) => (
+        HANDLES.filter((hd) =>
+          !isArtisticText ||
+          hd.h === "nw" ||
+          hd.h === "ne" ||
+          hd.h === "sw" ||
+          hd.h === "se"
+        ).map((hd) => (
           <div
             key={hd.h}
             data-element-handle

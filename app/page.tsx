@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { connection } from "next/server";
 import Link from "next/link";
 import Navbar from "./components/Navbar";
 import { createServerSupabase } from "@/lib/supabase-server";
@@ -155,6 +156,8 @@ export default function Home() {
 }
 
 async function HomeContent() {
+  await connection();
+
   const supabase = await createServerSupabase();
   const {
     data: { user },
